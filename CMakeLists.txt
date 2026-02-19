@@ -1,0 +1,18 @@
+idf_component_register(
+  SRCS
+    "src/alc_esp32_timer.cc"
+    "src/alc_utils.cc"
+    "src/alc_wifi_controller.cc"
+  PRIV_INCLUDE_DIRS
+    "src"
+  INCLUDE_DIRS
+    "include"
+  REQUIRES
+    "esp_timer"
+    "esp_common"
+    "esp_wifi"
+  PRIV_REQUIRES
+    "log"
+    "nvs_flash"
+    "esp_http_client"
+)
