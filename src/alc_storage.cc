@@ -7,19 +7,29 @@
 
 namespace ALC {
 
-Storage::Storage(const std::string& name_space) : name_space_(name_space) {
-    esp_err_t err = nvs_open(name_space.c_str(), NVS_READWRITE, &handle_);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
-    } else {
-        opened_ = true;
-    }
+Storage::Storage(const std::string& name_space) {
+    Open(name_space);
 }
 
 Storage::~Storage() {
     if (opened_) {
         nvs_close(handle_);
     }
+}
+
+esp_err_t Storage::Open(const std::string& name_space) {
+    if (opened_) {
+        nvs_close(handle_);
+        opened_ = false;
+    }
+    name_space_ = name_space;
+    esp_err_t err = nvs_open(name_space.c_str(), NVS_READWRITE, &handle_);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle for namespace %s!", esp_err_to_name(err), name_space.c_str());
+    } else {
+        opened_ = true;
+    }
+    return err;
 }
 
 bool Storage::KeyExists(const std::string& key) {

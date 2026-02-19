@@ -19,6 +19,11 @@ namespace ALC {
 class Storage {
 public:
     /**
+     * @brief Construct an empty Storage object. Use Open() to initialize.
+     */
+    Storage() = default;
+
+    /**
      * @brief Construct a new Storage object for a given namespace.
      *
      * @param name_space NVS namespace name (max 15 characters).
@@ -29,6 +34,14 @@ public:
      * @brief Destroy the Storage object and close the NVS handle.
      */
     ~Storage();
+
+    /**
+     * @brief Open a specific NVS namespace.
+     *
+     * @param name_space NVS namespace name (max 15 characters).
+     * @return esp_err_t ESP_OK on success, or an error code.
+     */
+    esp_err_t Open(const std::string& name_space);
 
     /**
      * @brief Check if a key exists in the current namespace.
