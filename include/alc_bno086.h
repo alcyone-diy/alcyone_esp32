@@ -41,9 +41,16 @@ public:
      *
      * @param i2c_port I2C port number.
      * @param address I2C address (default is 0x4A, can be 0x4B).
+     * @param i2c_timeout_ms I2C transaction timeout in milliseconds (default 100).
      */
-    BNO086(i2c_port_t i2c_port, uint8_t address = 0x4A);
+    BNO086(i2c_port_t i2c_port, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
     ~BNO086();
+
+    // Disable default constructor
+    BNO086() = delete;
+    // Disable copy constructor and assignment
+    BNO086(const BNO086&) = delete;
+    BNO086& operator=(const BNO086&) = delete;
 
     /**
      * @brief Initialize the sensor. Performs a soft reset and waits for advertisement.
@@ -116,7 +123,9 @@ public:
 private:
     i2c_port_t i2c_port_;
     uint8_t address_;
+    uint32_t i2c_timeout_ms_;
     uint8_t sequence_number_[6] = {0}; // SHTP sequence numbers for each channel
+    uint8_t sh2_sequence_number_ = 0;   // SH-2 command sequence number
 
     // Data storage
     Vector3 accel_ = {0, 0, 0, 0};

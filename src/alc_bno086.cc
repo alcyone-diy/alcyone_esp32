@@ -9,8 +9,8 @@ static const char* TAG = "BNO086";
 
 namespace ALC {
 
-BNO086::BNO086(i2c_port_t i2c_port, uint8_t address)
-    : i2c_port_(i2c_port), address_(address) {
+BNO086::BNO086(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
+    : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
     memset(sequence_number_, 0, sizeof(sequence_number_));
 }
 
@@ -87,7 +87,7 @@ esp_err_t BNO086::SendPacket(uint8_t channel, uint16_t len) {
     i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write(cmd, buffer_, total_len, true);
     i2c_master_stop(cmd);
-    esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(100));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
     i2c_cmd_link_delete(cmd);
 
     return err;
@@ -102,7 +102,7 @@ esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
     i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
     i2c_master_read(cmd, header, 4, I2C_MASTER_LAST_NACK);
     i2c_master_stop(cmd);
-    esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(timeout_ms > 0 ? timeout_ms : 5));
+    esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(timeout_ms));
     i2c_cmd_link_delete(cmd);
 
     if (err != ESP_OK) return err;
@@ -110,18 +110,20 @@ esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
     uint16_t length = (header[1] << 8) | header[0];
     length &= 0x7FFF; // Remove continuation bit
 
-    if (length == 0) return ESP_ERR_NOT_FOUND;
+    if (length == 0 || length == 0x7FFF) return ESP_ERR_NOT_FOUND;
     if (length < 4 || length > sizeof(buffer_)) {
         return ESP_ERR_INVALID_SIZE;
     }
 
-    // Read the full packet
+    // Read the full packet (including header again to maintain integrity if sensor allows)
+    // Note: Ideally this should be a single transaction, but old ESP-IDF I2C driver
+    // requires knowing the length before building the command chain.
     cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
     i2c_master_read(cmd, buffer_, length, I2C_MASTER_LAST_NACK);
     i2c_master_stop(cmd);
-    err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(100));
+    err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
     i2c_cmd_link_delete(cmd);
 
     return err;
@@ -145,6 +147,10 @@ void BNO086::ParsePacket() {
     }
 }
 
+static float qToFloat(int16_t fixed_point, int8_t q_point) {
+    return fixed_point * powf(2, -q_point);
+}
+
 void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
     if (len < 15) return;
     // payload[0] is sequence
@@ -166,10 +172,6 @@ void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
     gyro_integrated_rv_.k = qToFloat(raw_k, 14);
     gyro_integrated_rv_.real = qToFloat(raw_real, 14);
     gyro_integrated_rv_.accuracy = 0;
-}
-
-static float qToFloat(int16_t fixed_point, int8_t q_point) {
-    return fixed_point * powf(2, -q_point);
 }
 
 void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
@@ -333,7 +335,7 @@ esp_err_t BNO086::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
     uint8_t cmd_payload[12];
     memset(cmd_payload, 0, 12);
     cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-    cmd_payload[1] = sequence_number_[CHANNEL_CONTROL]++;
+    cmd_payload[1] = sh2_sequence_number_++;
     cmd_payload[2] = 0x07; // ME Calibration
     cmd_payload[3] = accel ? 1 : 0;
     cmd_payload[4] = gyro ? 1 : 0;
@@ -347,7 +349,7 @@ esp_err_t BNO086::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
 esp_err_t BNO086::SaveCalibration() {
     uint8_t cmd_payload[3];
     cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-    cmd_payload[1] = sequence_number_[CHANNEL_CONTROL]++;
+    cmd_payload[1] = sh2_sequence_number_++;
     cmd_payload[2] = 0x06; // Save DCD
 
     memcpy(buffer_ + 4, cmd_payload, 3);
