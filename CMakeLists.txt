@@ -4,6 +4,7 @@ idf_component_register(
     "src/alc_storage.cc"
     "src/alc_utils.cc"
     "src/alc_wifi_controller.cc"
+    "src/alc_bme280.cc"
   PRIV_INCLUDE_DIRS
     "src"
   INCLUDE_DIRS
@@ -14,6 +15,7 @@ idf_component_register(
     "esp_wifi"
     "nvs_flash"
     "cjson"
+    "driver"
   PRIV_REQUIRES
     "log"
     "esp_http_client"
