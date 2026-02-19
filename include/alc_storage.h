@@ -24,17 +24,23 @@ public:
     Storage() = default;
 
     /**
+     * @brief Construct a Storage object with a namespace. Use Open() to initialize.
+     *
+     * @param name_space NVS namespace name (max 15 characters).
+     */
+    Storage(const std::string& name_space);
+
+    /**
      * @brief Destroy the Storage object and close the NVS handle.
      */
     ~Storage();
 
     /**
-     * @brief Open a specific NVS namespace.
+     * @brief Open the NVS namespace.
      *
-     * @param name_space NVS namespace name (max 15 characters).
      * @return esp_err_t ESP_OK on success, or an error code.
      */
-    esp_err_t Open(const std::string& name_space);
+    esp_err_t Open();
 
     /**
      * @brief Close the current NVS namespace.
