@@ -21,16 +21,18 @@ public:
     /**
      * @brief Construct a new BME280 object.
      *
-     * @param i2c_port I2C port number (default: I2C_NUM_0).
+     * @param i2c_port I2C port number (e.g., I2C_NUM_0).
      * @param address I2C address of the sensor (default: 0x76).
      */
-    BME280(i2c_port_t i2c_port = I2C_NUM_0, uint8_t address = 0x76);
+    explicit BME280(i2c_port_t i2c_port, uint8_t address = 0x76);
 
     /**
-     * @brief Copying a sensor instance is not allowed.
+     * @brief Copying or moving a sensor instance is not allowed.
      */
     BME280(const BME280&) = delete;
     BME280& operator=(const BME280&) = delete;
+    BME280(BME280&&) = delete;
+    BME280& operator=(BME280&&) = delete;
 
     /**
      * @brief Initialize the sensor.
