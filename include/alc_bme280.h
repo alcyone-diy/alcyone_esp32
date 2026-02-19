@@ -14,12 +14,23 @@ namespace ALC {
 class BME280 {
 public:
     /**
+     * @brief Default constructor is deleted.
+     */
+    BME280() = delete;
+
+    /**
      * @brief Construct a new BME280 object.
      *
-     * @param i2c_port I2C port number (e.g., I2C_NUM_0).
-     * @param address I2C address of the sensor (typically 0x76 or 0x77).
+     * @param i2c_port I2C port number (default: I2C_NUM_0).
+     * @param address I2C address of the sensor (default: 0x76).
      */
-    BME280(i2c_port_t i2c_port, uint8_t address);
+    BME280(i2c_port_t i2c_port = I2C_NUM_0, uint8_t address = 0x76);
+
+    /**
+     * @brief Copying a sensor instance is not allowed.
+     */
+    BME280(const BME280&) = delete;
+    BME280& operator=(const BME280&) = delete;
 
     /**
      * @brief Initialize the sensor.
