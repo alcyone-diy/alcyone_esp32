@@ -7,21 +7,12 @@
 
 namespace ALC {
 
-Storage::Storage(const std::string& name_space) {
-    Open(name_space);
-}
-
 Storage::~Storage() {
-    if (opened_) {
-        nvs_close(handle_);
-    }
+    Close();
 }
 
 esp_err_t Storage::Open(const std::string& name_space) {
-    if (opened_) {
-        nvs_close(handle_);
-        opened_ = false;
-    }
+    Close();
     name_space_ = name_space;
     esp_err_t err = nvs_open(name_space.c_str(), NVS_READWRITE, &handle_);
     if (err != ESP_OK) {
@@ -30,6 +21,14 @@ esp_err_t Storage::Open(const std::string& name_space) {
         opened_ = true;
     }
     return err;
+}
+
+esp_err_t Storage::Close() {
+    if (opened_) {
+        nvs_close(handle_);
+        opened_ = false;
+    }
+    return ESP_OK;
 }
 
 bool Storage::KeyExists(const std::string& key) {

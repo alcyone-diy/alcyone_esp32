@@ -24,13 +24,6 @@ public:
     Storage() = default;
 
     /**
-     * @brief Construct a new Storage object for a given namespace.
-     *
-     * @param name_space NVS namespace name (max 15 characters).
-     */
-    Storage(const std::string& name_space);
-
-    /**
      * @brief Destroy the Storage object and close the NVS handle.
      */
     ~Storage();
@@ -42,6 +35,13 @@ public:
      * @return esp_err_t ESP_OK on success, or an error code.
      */
     esp_err_t Open(const std::string& name_space);
+
+    /**
+     * @brief Close the current NVS namespace.
+     *
+     * @return esp_err_t ESP_OK on success.
+     */
+    esp_err_t Close();
 
     /**
      * @brief Check if a key exists in the current namespace.
