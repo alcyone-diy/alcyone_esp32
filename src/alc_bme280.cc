@@ -26,137 +26,137 @@ BME280::BME280(i2c_port_t i2c_port, uint8_t address)
     : i2c_port_(i2c_port), address_(address) {}
 
 esp_err_t BME280::Init() {
-    uint8_t id;
-    esp_err_t err = ReadRegisters(BME280_REG_ID, &id, 1);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read ID register (0x%x)", err);
-        return err;
-    }
+  uint8_t id;
+  esp_err_t err = ReadRegisters(BME280_REG_ID, &id, 1);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to read ID register (0x%x)", err);
+    return err;
+  }
 
-    if (id != BME280_ID) {
-        ESP_LOGE(TAG, "Device ID mismatch: expected 0x%02x, got 0x%02x", BME280_ID, id);
-        return ESP_ERR_NOT_FOUND;
-    }
+  if (id != BME280_ID) {
+    ESP_LOGE(TAG, "Device ID mismatch: expected 0x%02x, got 0x%02x", BME280_ID, id);
+    return ESP_ERR_NOT_FOUND;
+  }
 
-    // Reset the device
-    err = WriteRegister(BME280_REG_RESET, BME280_RESET_VALUE);
-    if (err != ESP_OK) return err;
-    vTaskDelay(pdMS_TO_TICKS(10)); // Wait for reset
+  // Reset the device
+  err = WriteRegister(BME280_REG_RESET, BME280_RESET_VALUE);
+  if (err != ESP_OK) return err;
+  vTaskDelay(pdMS_TO_TICKS(10)); // Wait for reset
 
-    // Read calibration data
-    err = ReadCalibrationData();
-    if (err != ESP_OK) return err;
+  // Read calibration data
+  err = ReadCalibrationData();
+  if (err != ESP_OK) return err;
 
-    // Configure the sensor
-    // Humidity oversampling x1
-    err = WriteRegister(BME280_REG_CTRL_HUM, 0x01);
-    if (err != ESP_OK) return err;
+  // Configure the sensor
+  // Humidity oversampling x1
+  err = WriteRegister(BME280_REG_CTRL_HUM, 0x01);
+  if (err != ESP_OK) return err;
 
-    // Temperature oversampling x1, Pressure oversampling x1, Normal mode
-    // Mode: 00=Sleep, 01/10=Forced, 11=Normal
-    // osrs_t: 001 (x1), osrs_p: 001 (x1)
-    // 0x27 = 001(T) 001(P) 11(Mode)
-    err = WriteRegister(BME280_REG_CTRL_MEAS, 0x27);
-    if (err != ESP_OK) return err;
+  // Temperature oversampling x1, Pressure oversampling x1, Normal mode
+  // Mode: 00=Sleep, 01/10=Forced, 11=Normal
+  // osrs_t: 001 (x1), osrs_p: 001 (x1)
+  // 0x27 = 001(T) 001(P) 11(Mode)
+  err = WriteRegister(BME280_REG_CTRL_MEAS, 0x27);
+  if (err != ESP_OK) return err;
 
-    // Config: standby 1000ms, filter off
-    err = WriteRegister(BME280_REG_CONFIG, 0xA0);
-    if (err != ESP_OK) return err;
+  // Config: standby 1000ms, filter off
+  err = WriteRegister(BME280_REG_CONFIG, 0xA0);
+  if (err != ESP_OK) return err;
 
-    ESP_LOGI(TAG, "BME280 initialized successfully");
-    return ESP_OK;
+  ESP_LOGI(TAG, "BME280 initialized successfully");
+  return ESP_OK;
 }
 
 esp_err_t BME280::ReadAll() {
-    uint8_t data[8];
-    esp_err_t err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
-    if (err != ESP_OK) return err;
+  uint8_t data[8];
+  esp_err_t err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
+  if (err != ESP_OK) return err;
 
-    int32_t adc_P = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
-    int32_t adc_T = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
-    int32_t adc_H = (data[6] << 8) | data[7];
+  int32_t adc_P = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
+  int32_t adc_T = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+  int32_t adc_H = (data[6] << 8) | data[7];
 
-    // Temperature compensation
-    int32_t var1, var2;
-    var1 = ((((adc_T >> 3) - ((int32_t)calib_.dig_T1 << 1))) * ((int32_t)calib_.dig_T2)) >> 11;
-    var2 = (((((adc_T >> 4) - ((int32_t)calib_.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib_.dig_T1))) >> 12) * ((int32_t)calib_.dig_T3)) >> 14;
-    t_fine_ = var1 + var2;
-    temperature_ = ((t_fine_ * 5 + 128) >> 8) / 100.0f;
+  // Temperature compensation
+  int32_t var1, var2;
+  var1 = ((((adc_T >> 3) - ((int32_t)calib_.dig_T1 << 1))) * ((int32_t)calib_.dig_T2)) >> 11;
+  var2 = (((((adc_T >> 4) - ((int32_t)calib_.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib_.dig_T1))) >> 12) * ((int32_t)calib_.dig_T3)) >> 14;
+  t_fine_ = var1 + var2;
+  temperature_ = ((t_fine_ * 5 + 128) >> 8) / 100.0f;
 
-    // Pressure compensation
-    int64_t v1, v2, p;
-    v1 = ((int64_t)t_fine_) - 128000;
-    v2 = v1 * v1 * (int64_t)calib_.dig_P6;
-    v2 = v2 + ((v1 * (int64_t)calib_.dig_P5) << 17);
-    v2 = v2 + (((int64_t)calib_.dig_P4) << 35);
-    v1 = ((v1 * v1 * (int64_t)calib_.dig_P3) >> 8) + ((v1 * (int64_t)calib_.dig_P2) << 12);
-    v1 = (((((int64_t)1) << 47) + v1)) * ((int64_t)calib_.dig_P1) >> 33;
-    if (v1 != 0) {
-        p = 1048576 - adc_P;
-        p = (((p << 31) - v2) * 3125) / v1;
-        v1 = (((int64_t)calib_.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
-        v2 = (((int64_t)calib_.dig_P8) * p) >> 19;
-        p = ((p + v1 + v2) >> 8) + (((int64_t)calib_.dig_P7) << 4);
-        pressure_ = (float)p / 25600.0f; // Pa to hPa: 256.0 * 100.0
-    }
+  // Pressure compensation
+  int64_t v1, v2, p;
+  v1 = ((int64_t)t_fine_) - 128000;
+  v2 = v1 * v1 * (int64_t)calib_.dig_P6;
+  v2 = v2 + ((v1 * (int64_t)calib_.dig_P5) << 17);
+  v2 = v2 + (((int64_t)calib_.dig_P4) << 35);
+  v1 = ((v1 * v1 * (int64_t)calib_.dig_P3) >> 8) + ((v1 * (int64_t)calib_.dig_P2) << 12);
+  v1 = (((((int64_t)1) << 47) + v1)) * ((int64_t)calib_.dig_P1) >> 33;
+  if (v1 != 0) {
+    p = 1048576 - adc_P;
+    p = (((p << 31) - v2) * 3125) / v1;
+    v1 = (((int64_t)calib_.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+    v2 = (((int64_t)calib_.dig_P8) * p) >> 19;
+    p = ((p + v1 + v2) >> 8) + (((int64_t)calib_.dig_P7) << 4);
+    pressure_ = (float)p / 25600.0f; // Pa to hPa: 256.0 * 100.0
+  }
 
-    // Humidity compensation
-    int32_t v_x1_u32r;
-    v_x1_u32r = (t_fine_ - ((int32_t)76800));
-    v_x1_u32r = (((((adc_H << 14) - (((int32_t)calib_.dig_H4) << 20) - (((int32_t)calib_.dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) *
-                 (((((((v_x1_u32r * ((int32_t)calib_.dig_H6)) >> 10) * (((v_x1_u32r * ((int32_t)calib_.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
-                   ((int32_t)calib_.dig_H2) + 8192) >> 14));
-    v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)calib_.dig_H1)) >> 4));
-    v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
-    v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
-    humidity_ = (float)(v_x1_u32r >> 12) / 1024.0f;
+  // Humidity compensation
+  int32_t v_x1_u32r;
+  v_x1_u32r = (t_fine_ - ((int32_t)76800));
+  v_x1_u32r = (((((adc_H << 14) - (((int32_t)calib_.dig_H4) << 20) - (((int32_t)calib_.dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) *
+               (((((((v_x1_u32r * ((int32_t)calib_.dig_H6)) >> 10) * (((v_x1_u32r * ((int32_t)calib_.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
+                 ((int32_t)calib_.dig_H2) + 8192) >> 14));
+  v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)calib_.dig_H1)) >> 4));
+  v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
+  v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
+  humidity_ = (float)(v_x1_u32r >> 12) / 1024.0f;
 
-    return ESP_OK;
+  return ESP_OK;
 }
 
 esp_err_t BME280::ReadCalibrationData() {
-    uint8_t data[24];
-    esp_err_t err = ReadRegisters(BME280_REG_CALIB_00, data, 24);
-    if (err != ESP_OK) return err;
+  uint8_t data[24];
+  esp_err_t err = ReadRegisters(BME280_REG_CALIB_00, data, 24);
+  if (err != ESP_OK) return err;
 
-    calib_.dig_T1 = (data[1] << 8) | data[0];
-    calib_.dig_T2 = (data[3] << 8) | data[2];
-    calib_.dig_T3 = (data[5] << 8) | data[4];
-    calib_.dig_P1 = (data[7] << 8) | data[6];
-    calib_.dig_P2 = (data[9] << 8) | data[8];
-    calib_.dig_P3 = (data[11] << 8) | data[10];
-    calib_.dig_P4 = (data[13] << 8) | data[12];
-    calib_.dig_P5 = (data[15] << 8) | data[14];
-    calib_.dig_P6 = (data[17] << 8) | data[16];
-    calib_.dig_P7 = (data[19] << 8) | data[18];
-    calib_.dig_P8 = (data[21] << 8) | data[20];
-    calib_.dig_P9 = (data[23] << 8) | data[22];
+  calib_.dig_T1 = (data[1] << 8) | data[0];
+  calib_.dig_T2 = (data[3] << 8) | data[2];
+  calib_.dig_T3 = (data[5] << 8) | data[4];
+  calib_.dig_P1 = (data[7] << 8) | data[6];
+  calib_.dig_P2 = (data[9] << 8) | data[8];
+  calib_.dig_P3 = (data[11] << 8) | data[10];
+  calib_.dig_P4 = (data[13] << 8) | data[12];
+  calib_.dig_P5 = (data[15] << 8) | data[14];
+  calib_.dig_P6 = (data[17] << 8) | data[16];
+  calib_.dig_P7 = (data[19] << 8) | data[18];
+  calib_.dig_P8 = (data[21] << 8) | data[20];
+  calib_.dig_P9 = (data[23] << 8) | data[22];
 
-    err = ReadRegisters(0xA1, &calib_.dig_H1, 1);
-    if (err != ESP_OK) return err;
+  err = ReadRegisters(0xA1, &calib_.dig_H1, 1);
+  if (err != ESP_OK) return err;
 
-    uint8_t h_data[7];
-    err = ReadRegisters(BME280_REG_CALIB_26, h_data, 7);
-    if (err != ESP_OK) return err;
+  uint8_t h_data[7];
+  err = ReadRegisters(BME280_REG_CALIB_26, h_data, 7);
+  if (err != ESP_OK) return err;
 
-    calib_.dig_H2 = (h_data[1] << 8) | h_data[0];
-    calib_.dig_H3 = h_data[2];
-    calib_.dig_H4 = (h_data[3] << 4) | (h_data[4] & 0x0F);
-    if (calib_.dig_H4 & (1 << 11)) calib_.dig_H4 |= 0xF000;
-    calib_.dig_H5 = (h_data[5] << 4) | (h_data[4] >> 4);
-    if (calib_.dig_H5 & (1 << 11)) calib_.dig_H5 |= 0xF000;
-    calib_.dig_H6 = (int8_t)h_data[6];
+  calib_.dig_H2 = (h_data[1] << 8) | h_data[0];
+  calib_.dig_H3 = h_data[2];
+  calib_.dig_H4 = (h_data[3] << 4) | (h_data[4] & 0x0F);
+  if (calib_.dig_H4 & (1 << 11)) calib_.dig_H4 |= 0xF000;
+  calib_.dig_H5 = (h_data[5] << 4) | (h_data[4] >> 4);
+  if (calib_.dig_H5 & (1 << 11)) calib_.dig_H5 |= 0xF000;
+  calib_.dig_H6 = (int8_t)h_data[6];
 
-    return ESP_OK;
+  return ESP_OK;
 }
 
 esp_err_t BME280::WriteRegister(uint8_t reg, uint8_t value) {
-    uint8_t data[2] = {reg, value};
-    return i2c_master_write_to_device(i2c_port_, address_, data, 2, pdMS_TO_TICKS(100));
+  uint8_t data[2] = {reg, value};
+  return i2c_master_write_to_device(i2c_port_, address_, data, 2, pdMS_TO_TICKS(100));
 }
 
 esp_err_t BME280::ReadRegisters(uint8_t reg, uint8_t* data, size_t len) {
-    return i2c_master_write_read_device(i2c_port_, address_, &reg, 1, data, len, pdMS_TO_TICKS(100));
+  return i2c_master_write_read_device(i2c_port_, address_, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
 } // namespace ALC
