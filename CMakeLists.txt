@@ -6,6 +6,7 @@ idf_component_register(
     "src/alc_wifi_controller.cc"
     "src/alc_bme280.cc"
     "src/alc_bno086.cc"
+    "src/alc_max_m10s.cc"
   PRIV_INCLUDE_DIRS
     "src"
   INCLUDE_DIRS
