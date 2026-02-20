@@ -11,30 +11,68 @@ namespace ALC {
  * @brief BNO086 IMU driver for ESP-IDF.
  *
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
+ *
+ * ### Usage
+ * 1. Instantiate the @ref BNO086 class with the I2C port and address.
+ * 2. Call @ref Open() to initialize the sensor and perform a soft reset.
+ * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors (e.g., @ref EnableRotationVector()).
+ * 4. In a loop, call @ref Update() to poll for new packets from the sensor.
+ * 5. Retrieve the latest data using the corresponding `Get...()` methods (e.g., @ref GetRotationVector()).
+ *
+ * Example:
+ * @code
+ * ALC::BNO086 imu(I2C_NUM_0);
+ * if (imu.Open() == ESP_OK) {
+ *     imu.EnableRotationVector(10000); // 10ms period
+ *     while (true) {
+ *         imu.Update();
+ *         auto rv = imu.GetRotationVector();
+ *         // Use rv.i, rv.j, rv.k, rv.real
+ *         vTaskDelay(pdMS_TO_TICKS(10));
+ *     }
+ * }
+ * @endcode
  */
 class BNO086 {
 public:
+  /**
+   * @brief A 3D vector for sensor data.
+   */
   struct Vector3 {
-    float x, y, z;
-    uint8_t accuracy;
+    float x;           ///< X-axis value (m/s^2 for accel, rad/s for gyro, uT for mag)
+    float y;           ///< Y-axis value
+    float z;           ///< Z-axis value
+    uint8_t accuracy;  ///< Accuracy estimate (0-3: 0=Unreliable, 1=Low, 2=Medium, 3=High)
   };
 
+  /**
+   * @brief A quaternion representing rotation in 3D space.
+   */
   struct Quaternion {
-    float i, j, k, real;
-    float accuracy; // radians
+    float i;           ///< Imaginary part i (x)
+    float j;           ///< Imaginary part j (y)
+    float k;           ///< Imaginary part k (z)
+    float real;        ///< Real part (w)
+    float accuracy;    ///< Estimated accuracy in radians
   };
 
+  /**
+   * @brief Step counter data.
+   */
   struct StepCounter {
-    uint16_t count;
-    uint32_t latency;
+    uint16_t count;    ///< Number of steps detected
+    uint32_t latency;  ///< Time since last step was detected in microseconds
   };
 
+  /**
+   * @brief Stability classifier output.
+   */
   enum class Stability {
-    UNKNOWN = 0,
-    ON_TABLE = 1,
-    STATIONARY = 2,
-    STABLE = 3,
-    IN_MOTION = 4
+    UNKNOWN = 0,       ///< Stability unknown
+    ON_TABLE = 1,      ///< Device is on a flat, stable surface
+    STATIONARY = 2,    ///< Device is not moving (e.g. held still)
+    STABLE = 3,        ///< Device is relatively stable
+    IN_MOTION = 4      ///< Device is moving
   };
 
   /**
@@ -71,26 +109,101 @@ public:
    */
   esp_err_t Update();
 
-  // Configuration methods (period in microseconds)
+  /**
+   * @brief Enable Accelerometer reports.
+   * @param period_us Reporting period in microseconds.
+   * @return esp_err_t ESP_OK on success.
+   * @note Unit: m/s^2.
+   */
   esp_err_t EnableAccelerometer(uint32_t period_us);
+
+  /**
+   * @brief Enable Gyroscope reports.
+   * @param period_us Reporting period in microseconds.
+   * @return esp_err_t ESP_OK on success.
+   * @note Unit: rad/s.
+   */
   esp_err_t EnableGyroscope(uint32_t period_us);
+
+  /**
+   * @brief Enable Magnetometer reports.
+   * @param period_us Reporting period in microseconds.
+   * @return esp_err_t ESP_OK on success.
+   * @note Unit: uT.
+   */
   esp_err_t EnableMagnetometer(uint32_t period_us);
+
+  /**
+   * @brief Enable Linear Acceleration reports (Acceleration minus Gravity).
+   * @param period_us Reporting period in microseconds.
+   * @return esp_err_t ESP_OK on success.
+   * @note Unit: m/s^2.
+   */
   esp_err_t EnableLinearAcceleration(uint32_t period_us);
+
+  /**
+   * @brief Enable Gravity reports.
+   * @param period_us Reporting period in microseconds.
+   * @return esp_err_t ESP_OK on success.
+   * @note Unit: m/s^2.
+   */
   esp_err_t EnableGravity(uint32_t period_us);
+
+  /**
+   * @brief Enable Rotation Vector reports (Fused data including Magnetometer).
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableRotationVector(uint32_t period_us);
+
+  /**
+   * @brief Enable Game Rotation Vector reports (Fused data, no Magnetometer).
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableGameRotationVector(uint32_t period_us);
+
+  /**
+   * @brief Enable ARVR Stabilized Rotation Vector reports.
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableARVRStabilizedRotationVector(uint32_t period_us);
+
+  /**
+   * @brief Enable ARVR Stabilized Game Rotation Vector reports.
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableARVRStabilizedGameRotationVector(uint32_t period_us);
+
+  /**
+   * @brief Enable Gyro Integrated Rotation Vector reports (High-rate 400Hz+).
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableGyroIntegratedRotationVector(uint32_t period_us);
+
+  /**
+   * @brief Enable Step Counter reports.
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableStepCounter(uint32_t period_us);
+
+  /**
+   * @brief Enable Stability Classifier reports.
+   * @param period_us Reporting period in microseconds.
+   */
   esp_err_t EnableStabilityClassifier(uint32_t period_us);
 
   /**
-   * @brief Configure dynamic calibration.
-   * @param accel Enable accelerometer calibration.
-   * @param gyro Enable gyroscope calibration.
-   * @param mag Enable magnetometer calibration.
+   * @brief Configure dynamic calibration for the Motion Engine (ME).
+   *
+   * Dynamic calibration allows the sensor to continuously update its internal calibration offsets
+   * based on motion patterns.
+   *
+   * @param accel Enable accelerometer calibration (based on periods of stillness and gravity).
+   * @param gyro Enable gyroscope calibration (zero-rate offset when detected as stationary).
+   * @param mag Enable magnetometer calibration (based on rotation through the magnetic field).
    * @return esp_err_t ESP_OK on success.
+   *
+   * @note It is recommended to enable these during normal operation to improve accuracy.
+   * Use SaveCalibration() to persist the current calibration to the sensor's flash memory.
    */
   esp_err_t SetCalibrationConfig(bool accel, bool gyro, bool mag);
 
@@ -105,6 +218,20 @@ public:
    * @return esp_err_t ESP_OK on success.
    */
   esp_err_t SoftReset();
+
+  /**
+   * @brief Set the sensor power mode.
+   *
+   * Putting the sensor to sleep reduces power consumption. The sensor will still respond
+   * to commands in sleep mode.
+   *
+   * @param sleep True to put the sensor to sleep, false to wake it up (On).
+   * @return esp_err_t ESP_OK on success.
+   *
+   * @note For ESP32 Deep Sleep, it is recommended to put the BNO086 to sleep first if
+   * its power supply is maintained during the host's sleep.
+   */
+  esp_err_t SetPowerMode(bool sleep);
 
   // Getters for the latest data
   Vector3 GetAccelerometer() const { return accel_; }
@@ -158,6 +285,9 @@ private:
   // SH-2 Report IDs
   static constexpr uint8_t SHTP_REPORT_COMMAND_RESPONSE = 0xF1;
   static constexpr uint8_t SHTP_REPORT_COMMAND_REQUEST = 0xF2;
+
+  // SH-2 Commands
+  static constexpr uint8_t SH2_COMMAND_SET_POWER_STATE = 0x01;
   static constexpr uint8_t SHTP_REPORT_SET_FEATURE_COMMAND = 0xFD;
   static constexpr uint8_t SHTP_REPORT_GET_FEATURE_RESPONSE = 0xFC;
 
