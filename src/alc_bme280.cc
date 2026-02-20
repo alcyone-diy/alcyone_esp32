@@ -52,24 +52,43 @@ esp_err_t BME280::Init() {
   err = WriteRegister(BME280_REG_CTRL_HUM, 0x01);
   if (err != ESP_OK) return err;
 
-  // Temperature oversampling x1, Pressure oversampling x1, Normal mode
-  // Mode: 00=Sleep, 01/10=Forced, 11=Normal
-  // osrs_t: 001 (x1), osrs_p: 001 (x1)
-  // 0x27 = 001(T) 001(P) 11(Mode)
-  err = WriteRegister(BME280_REG_CTRL_MEAS, 0x27);
+  // Temperature oversampling x1, Pressure oversampling x16, Sleep mode
+  // osrs_t: 001 (x1), osrs_p: 101 (x16)
+  // 0x34 = 001(T) 101(P) 00(Sleep)
+  err = WriteRegister(BME280_REG_CTRL_MEAS, 0x34);
   if (err != ESP_OK) return err;
 
-  // Config: standby 1000ms, filter off
-  err = WriteRegister(BME280_REG_CONFIG, 0xA0);
+  // Config: filter off
+  err = WriteRegister(BME280_REG_CONFIG, 0x00);
   if (err != ESP_OK) return err;
 
-  ESP_LOGI(TAG, "BME280 initialized successfully");
+  ESP_LOGI(TAG, "BME280 initialized successfully (Low Power / Forced Mode)");
   return ESP_OK;
 }
 
 esp_err_t BME280::ReadAll() {
+  // Trigger Forced Mode
+  // 0x35 = 001(T) 101(P) 01(Forced)
+  esp_err_t err = WriteRegister(BME280_REG_CTRL_MEAS, 0x35);
+  if (err != ESP_OK) return err;
+
+  // Wait for measurement to complete (measuring bit goes to 0)
+  uint8_t status;
+  int retry = 10;
+  while (retry--) {
+    err = ReadRegisters(BME280_REG_STATUS, &status, 1);
+    if (err != ESP_OK) return err;
+    if (!(status & 0x08)) break; // Bit 3 is 'measuring'
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
+  if (retry < 0) {
+    ESP_LOGE(TAG, "Timeout waiting for measurement");
+    return ESP_ERR_TIMEOUT;
+  }
+
   uint8_t data[8];
-  esp_err_t err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
+  err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
   if (err != ESP_OK) return err;
 
   int32_t adc_P = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
