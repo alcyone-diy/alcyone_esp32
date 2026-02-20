@@ -13,13 +13,17 @@ public:
   /**
    * @brief Oversampling settings for Temperature, Pressure, and Humidity.
    *
-   * Oversampling reduces noise by averaging multiple raw measurements.
-   * - Pros: Higher resolution, less jitter/noise.
-   * - Cons: Increased power consumption and longer measurement time.
+   * Oversampling reduces noise by averaging multiple raw measurements *per sample*.
+   * It remains relevant in BOTH Normal and Forced modes.
+   *
+   * - X1: 1 raw sample. Minimal power, lowest conversion time (~10ms).
+   * - X2, X4, X8: Intermediate noise reduction and power.
+   * - X16: 16 raw samples averaged. Best resolution, highest power per snapshot,
+   *        longest conversion time (~100ms).
    *
    * Choosing a value:
-   * - X1: Good for high-speed tracking or very low power.
-   * - X16: Best for high-precision pressure (e.g., weather/storm detection).
+   * - X1: Best for battery-critical apps where jitter is acceptable.
+   * - X16: Best for high-precision monitoring (e.g., boat barometer for storm detection).
    */
   enum class Oversampling : uint8_t {
     SKIPPED = 0,
@@ -33,13 +37,17 @@ public:
   /**
    * @brief IIR Filter coefficients.
    *
-   * The filter smooths out short-term fluctuations (e.g., wind, slamming doors).
-   * - Pros: Much more stable readings, filters out "glitches".
-   * - Cons: Introduces measurement latency (lag). Values take longer to stabilize.
+   * The filter smooths out fluctuations (e.g., wind, cabin pressure changes).
+   *
+   * ! IMPORTANT FOR FORCED MODE: If sampling infrequently (e.g., every 10 min),
+   * keep this OFF. The filter anchors the NEW reading to the OLD one (from 10 min ago),
+   * causing a massive "lag" in detecting actual atmospheric changes. Use Oversampling
+   * instead for noise reduction in low-frequency Forced mode.
    *
    * Choosing a value:
-   * - OFF: Fastest response, most noise.
-   * - COEFF_16: Most stable, but can take several samples to reflect a real change.
+   * - OFF: 100% weight to newest sample. Fastest response.
+   * - COEFF_2: 50% new / 50% old. Moderate smoothing.
+   * - COEFF_16: ~6% new / ~94% old. Extreme smoothing, ignores gusts/brief noise.
    */
   enum class Filter : uint8_t {
     OFF = 0,
