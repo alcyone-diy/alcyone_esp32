@@ -2,10 +2,8 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
-#include "alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
-#include <functional>
 
 namespace ALC {
 
@@ -15,17 +13,15 @@ namespace ALC {
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
  *
  * ### Usage
- * 1. Instantiate the @ref BNO086 class with the I2C bus manager.
- * 2. Call @ref Open() or @ref OpenAsync() to initialize the sensor and perform a soft reset.
+ * 1. Instantiate the @ref BNO086 class with the I2C port and address.
+ * 2. Call @ref Open() to initialize the sensor and perform a soft reset.
  * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors (e.g., @ref EnableRotationVector()).
- * 4. In a loop, call @ref Update() or @ref UpdateAsync() to poll for new packets from the sensor.
+ * 4. In a loop, call @ref Update() to poll for new packets from the sensor.
  * 5. Retrieve the latest data using the corresponding `Get...()` methods (e.g., @ref GetRotationVector()).
  *
  * Example:
  * @code
- * ALC::I2CBusManager i2c_bus(I2C_NUM_0);
- * i2c_bus.Init(GPIO_NUM_21, GPIO_NUM_22);
- * ALC::BNO086 imu(i2c_bus);
+ * ALC::BNO086 imu(I2C_NUM_0);
  * if (imu.Open() == ESP_OK) {
  *     imu.EnableRotationVector(10000); // 10ms period
  *     while (true) {
@@ -39,8 +35,6 @@ namespace ALC {
  */
 class BNO086 {
 public:
-  using Callback = std::function<void(esp_err_t)>;
-
   /**
    * @brief A 3D vector for sensor data.
    */
@@ -84,11 +78,11 @@ public:
   /**
    * @brief Construct a new BNO086 object.
    *
-   * @param i2c_bus Reference to the I2C bus manager.
+   * @param i2c_port I2C port number.
    * @param address I2C address (default is 0x4A, can be 0x4B).
    * @param i2c_timeout_ms I2C transaction timeout in milliseconds (default 100).
    */
-  BNO086(I2CBusManager& i2c_bus, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
+  BNO086(i2c_port_t i2c_port, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
   ~BNO086();
 
   // Disable default constructor
@@ -104,12 +98,6 @@ public:
   esp_err_t Open();
 
   /**
-   * @brief Initialize and open the sensor asynchronously.
-   * @param cb Callback called when open is complete.
-   */
-  void OpenAsync(Callback cb);
-
-  /**
    * @brief Close the sensor connection.
    * @return esp_err_t ESP_OK.
    */
@@ -120,12 +108,6 @@ public:
    * @return esp_err_t ESP_OK on success.
    */
   esp_err_t Update();
-
-  /**
-   * @brief Poll for new packets from the sensor asynchronously.
-   * @param cb Callback called when update is complete.
-   */
-  void UpdateAsync(Callback cb);
 
   /**
    * @brief Enable Accelerometer reports.
@@ -267,7 +249,7 @@ public:
   Stability GetStability() const { return stability_; }
 
 private:
-  I2CBusManager& i2c_bus_;
+  i2c_port_t i2c_port_;
   uint8_t address_;
   uint32_t i2c_timeout_ms_;
   uint8_t sequence_number_[6] = {0}; // SHTP sequence numbers for each channel
@@ -293,13 +275,12 @@ private:
   mutable std::recursive_mutex mutex_;
 
   // SH-2 Protocol helpers
-  esp_err_t SendPacketInternal(i2c_port_t port, uint8_t channel, uint16_t len);
-  esp_err_t ReceivePacketInternal(i2c_port_t port, uint16_t timeout_ms = 0);
+  esp_err_t SendPacket(uint8_t channel, uint16_t len);
+  esp_err_t ReceivePacket(uint16_t timeout_ms = 0);
   void ParsePacket();
   void ParseSH2Report(uint8_t* payload, uint16_t len);
   void ParseGyroIntegratedReport(uint8_t* payload, uint16_t len);
   esp_err_t SetFeature(uint8_t report_id, uint32_t period_us);
-  void PollAdvertisementAsync(int retries, Callback cb);
 
   // SH-2 Report IDs
   static constexpr uint8_t SHTP_REPORT_COMMAND_RESPONSE = 0xF1;

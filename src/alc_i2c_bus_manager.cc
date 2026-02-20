@@ -16,6 +16,7 @@ I2CBusManager::~I2CBusManager() {
   if (wake_sem_) {
     vSemaphoreDelete(wake_sem_);
   }
+  i2c_driver_delete(port_);
 }
 
 esp_err_t I2CBusManager::Init(int sda_pin, int scl_pin, uint32_t clk_speed) {
@@ -70,6 +71,7 @@ void I2CBusManager::TaskEntry(void* pvParameters) {
 }
 
 void I2CBusManager::TaskLoop() {
+  std::vector<Request> to_run;
   while (true) {
     TickType_t now = xTaskGetTickCount();
     TickType_t wait_ticks = portMAX_DELAY;
@@ -100,7 +102,7 @@ void I2CBusManager::TaskLoop() {
     }
 
     // Process requests
-    std::vector<Request> to_run;
+    to_run.clear();
     now = xTaskGetTickCount();
     {
       std::lock_guard<std::mutex> lock(mutex_);

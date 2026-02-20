@@ -2,11 +2,9 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
-#include "alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
 #include <vector>
-#include <functional>
 
 namespace ALC {
 
@@ -15,8 +13,6 @@ namespace ALC {
  */
 class MaxM10S {
 public:
-  using Callback = std::function<void(esp_err_t)>;
-
   /**
    * @brief Navigation Position Velocity Time Solution data.
    */
@@ -155,28 +151,21 @@ public:
 
   /**
    * @brief Construct a new MaxM10S object.
-   * @param i2c_bus Reference to the I2C bus manager.
-   * @param address I2C address (default is 0x42).
-   * @param i2c_timeout_ms I2C transaction timeout.
    */
-  explicit MaxM10S(I2CBusManager& i2c_bus, uint8_t address = 0x42, uint32_t i2c_timeout_ms = 100);
+  explicit MaxM10S(i2c_port_t i2c_port, uint8_t address = 0x42, uint32_t i2c_timeout_ms = 100);
   ~MaxM10S();
 
   MaxM10S() = delete;
   MaxM10S(const MaxM10S&) = delete;
   MaxM10S& operator=(const MaxM10S&) = delete;
+  MaxM10S(MaxM10S&&) = delete;
+  MaxM10S& operator=(MaxM10S&&) = delete;
 
   /**
    * @brief Initialize communication and basic configuration.
    * @return esp_err_t ESP_OK on success.
    */
   esp_err_t Open();
-
-  /**
-   * @brief Initialize and open the sensor asynchronously.
-   * @param cb Callback called when open is complete.
-   */
-  void OpenAsync(Callback cb);
 
   /**
    * @brief Close the driver.
@@ -188,12 +177,6 @@ public:
    * @return esp_err_t ESP_OK on success.
    */
   esp_err_t Update();
-
-  /**
-   * @brief Poll for new data and update internal state asynchronously.
-   * @param cb Callback called when update is complete.
-   */
-  void UpdateAsync(Callback cb);
 
   // Getters for latest data
   PVTData GetPVT() const;
@@ -245,7 +228,7 @@ public:
   esp_err_t SetConfig(uint32_t key, bool value);
 
 private:
-  I2CBusManager& i2c_bus_;
+  i2c_port_t i2c_port_;
   uint8_t address_;
   uint32_t i2c_timeout_ms_;
   mutable std::recursive_mutex mutex_;
@@ -255,7 +238,7 @@ private:
   std::vector<SatInfo> sat_data_;
 
   // Protocol helpers
-  esp_err_t SendUBXInternal(i2c_port_t port, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
+  esp_err_t SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
   void ProcessByte(uint8_t byte);
   void HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
 
