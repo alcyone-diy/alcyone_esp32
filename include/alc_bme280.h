@@ -2,7 +2,9 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
+#include "alc_i2c_bus_manager.h"
 #include <mutex>
+#include <functional>
 
 namespace ALC {
 
@@ -11,6 +13,8 @@ namespace ALC {
  */
 class BME280 {
 public:
+  using Callback = std::function<void(esp_err_t)>;
+
   /**
    * @brief Oversampling settings for Temperature, Pressure, and Humidity.
    *
@@ -108,10 +112,10 @@ public:
   /**
    * @brief Construct a new BME280 object.
    *
-   * @param i2c_port I2C port number.
+   * @param i2c_bus Reference to the I2C bus manager.
    * @param address I2C address of the sensor (default: 0x76).
    */
-  explicit BME280(i2c_port_t i2c_port, uint8_t address = 0x76);
+  explicit BME280(I2CBusManager& i2c_bus, uint8_t address = 0x76);
 
   /**
    * @brief Copying or moving a sensor instance is not allowed.
@@ -128,6 +132,12 @@ public:
   esp_err_t Init();
 
   /**
+   * @brief Initialize the sensor asynchronously.
+   * @param cb Callback called when initialization is complete.
+   */
+  void InitAsync(Callback cb);
+
+  /**
    * @brief Update the sensor configuration.
    * @param config The new configuration settings.
    * @return esp_err_t ESP_OK on success.
@@ -135,10 +145,23 @@ public:
   esp_err_t Configure(const Configuration& config);
 
   /**
+   * @brief Update the sensor configuration asynchronously.
+   * @param config The new configuration settings.
+   * @param cb Callback called when configuration is complete.
+   */
+  void ConfigureAsync(const Configuration& config, Callback cb);
+
+  /**
    * @brief Read all sensor values (temperature, pressure, humidity).
    * @return esp_err_t ESP_OK on success.
    */
   esp_err_t ReadAll();
+
+  /**
+   * @brief Read all sensor values asynchronously.
+   * @param cb Callback called when reading is complete.
+   */
+  void ReadAllAsync(Callback cb);
 
   // Getters
   float GetTemperature() const;
@@ -146,12 +169,16 @@ public:
   float GetHumidity() const;
 
 private:
-  esp_err_t ReadCalibrationData();
-  esp_err_t WriteRegister(uint8_t reg, uint8_t value);
-  esp_err_t ReadRegisters(uint8_t reg, uint8_t* data, size_t len);
-  esp_err_t ApplyConfiguration();
+  esp_err_t ReadCalibrationDataInternal(i2c_port_t port);
+  esp_err_t WriteRegisterInternal(i2c_port_t port, uint8_t reg, uint8_t value);
+  esp_err_t ReadRegistersInternal(i2c_port_t port, uint8_t reg, uint8_t* data, size_t len);
+  esp_err_t ApplyConfigurationInternal(i2c_port_t port);
 
-  i2c_port_t i2c_port_;
+  void PollMeasurementAsync(int retries, Callback cb);
+  void ReadDataAsync(Callback cb);
+  void ProcessRawData(const uint8_t* data);
+
+  I2CBusManager& i2c_bus_;
   uint8_t address_;
   Configuration config_;
 

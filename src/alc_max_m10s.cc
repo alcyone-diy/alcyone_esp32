@@ -2,41 +2,68 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <cstring>
 
 static const char* TAG = "MaxM10S";
 
 namespace ALC {
 
-MaxM10S::MaxM10S(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
-  : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
+MaxM10S::MaxM10S(I2CBusManager& i2c_bus, uint8_t address, uint32_t i2c_timeout_ms)
+  : i2c_bus_(i2c_bus), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
 }
 
 MaxM10S::~MaxM10S() {
 }
 
 esp_err_t MaxM10S::Open() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  OpenAsync([&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
+}
+
+void MaxM10S::OpenAsync(Callback cb) {
   ESP_LOGI(TAG, "Opening MaxM10S at address 0x%02X", address_);
 
-  // Initial dummy read to clear anything in the buffer
-  Update();
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    // Enable UBX-NAV-PVT message on I2C
+    uint8_t payload[9];
+    payload[0] = 0; payload[1] = 0x01; payload[2] = 0; payload[3] = 0;
+    uint32_t key = CFG_MSGOUT_UBX_NAV_PVT_I2C;
+    memcpy(payload + 4, &key, 4);
+    payload[8] = 1;
+    esp_err_t err = SendUBXInternal(port, 0x06, 0x8A, payload, 9);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to connect to MaxM10S (check I2C): %s", esp_err_to_name(err));
+      return err;
+    }
 
-  // Enable UBX-NAV-PVT message on I2C
-  esp_err_t err = SetConfig(CFG_MSGOUT_UBX_NAV_PVT_I2C, (uint8_t)1);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to connect to MaxM10S (check I2C): %s", esp_err_to_name(err));
-    return err;
-  }
+    // Enable UBX-NAV-DOP and UBX-NAV-SAT
+    key = CFG_MSGOUT_UBX_NAV_DOP_I2C;
+    memcpy(payload + 4, &key, 4);
+    SendUBXInternal(port, 0x06, 0x8A, payload, 9);
 
-  // Enable UBX-NAV-DOP and UBX-NAV-SAT
-  SetConfig(CFG_MSGOUT_UBX_NAV_DOP_I2C, (uint8_t)1);
-  SetConfig(CFG_MSGOUT_UBX_NAV_SAT_I2C, (uint8_t)1);
+    key = CFG_MSGOUT_UBX_NAV_SAT_I2C;
+    memcpy(payload + 4, &key, 4);
+    SendUBXInternal(port, 0x06, 0x8A, payload, 9);
 
-  // Set 5Hz measurement rate (200ms)
-  SetMeasurementRate(200);
+    // Set 5Hz measurement rate (200ms)
+    uint16_t rate = 200;
+    uint8_t payload_rate[10];
+    payload_rate[0] = 0; payload_rate[1] = 0x01; payload_rate[2] = 0; payload_rate[3] = 0;
+    key = CFG_RATE_MEAS;
+    memcpy(payload_rate + 4, &key, 4);
+    memcpy(payload_rate + 8, &rate, 2);
+    SendUBXInternal(port, 0x06, 0x8A, payload_rate, 10);
 
-  return ESP_OK;
+    return ESP_OK;
+  }, cb);
 }
 
 esp_err_t MaxM10S::Close() {
@@ -44,57 +71,44 @@ esp_err_t MaxM10S::Close() {
 }
 
 esp_err_t MaxM10S::Update() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  UpdateAsync([&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
+}
 
-  // Read available length from registers 0xFD and 0xFE
-  uint8_t len_reg = 0xFD;
-  uint8_t len_bytes[2] = {0, 0};
+void MaxM10S::UpdateAsync(Callback cb) {
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    // Read available length from registers 0xFD and 0xFE
+    uint8_t len_reg = 0xFD;
+    uint8_t len_bytes[2] = {0, 0};
+    esp_err_t err = i2c_master_write_read_device(port, address_, &len_reg, 1, len_bytes, 2, pdMS_TO_TICKS(i2c_timeout_ms_));
+    if (err != ESP_OK) return err;
 
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write_byte(cmd, len_reg, true);
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-  i2c_master_read(cmd, len_bytes, 2, I2C_MASTER_LAST_NACK);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
+    uint16_t available = (len_bytes[0] << 8) | len_bytes[1];
+    if (available == 0 || available == 0xFFFF) return ESP_OK;
 
-  if (err != ESP_OK) return err;
+    // Limit to 1024 bytes per update
+    if (available > 1024) available = 1024;
 
-  uint16_t available = (len_bytes[0] << 8) | len_bytes[1];
-  if (available == 0 || available == 0xFFFF) return ESP_OK;
-
-  // Limit to 1024 bytes per update to avoid blocking or excessive memory usage
-  if (available > 1024) available = 1024;
-
-  uint8_t data_reg = 0xFF;
-  uint8_t chunk[128];
-
-  while (available > 0) {
-    uint16_t to_read = (available > 128) ? 128 : available;
-
-    cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, data_reg, true);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-    i2c_master_read(cmd, chunk, to_read, I2C_MASTER_LAST_NACK);
-    i2c_master_stop(cmd);
-    err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-    i2c_cmd_link_delete(cmd);
-
-    if (err != ESP_OK) break;
-
-    for (uint16_t i = 0; i < to_read; ++i) {
-      ProcessByte(chunk[i]);
+    uint8_t data_reg = 0xFF;
+    uint8_t chunk[128];
+    while (available > 0) {
+      uint16_t to_read = (available > 128) ? 128 : available;
+      err = i2c_master_write_read_device(port, address_, &data_reg, 1, chunk, to_read, pdMS_TO_TICKS(i2c_timeout_ms_));
+      if (err != ESP_OK) break;
+      for (uint16_t i = 0; i < to_read; ++i) {
+        ProcessByte(chunk[i]);
+      }
+      available -= to_read;
     }
-    available -= to_read;
-  }
-
-  return err;
+    return err;
+  }, cb);
 }
 
 void MaxM10S::ProcessByte(uint8_t byte) {
@@ -174,6 +188,7 @@ static T readLE(const uint8_t* buf) {
 }
 
 void MaxM10S::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   if (msgClass == 0x01) { // NAV
     if (msgID == 0x07 && len >= 92) { // PVT
       pvt_data_.iTOW = readLE<uint32_t>(payload + 0);
@@ -236,9 +251,9 @@ void MaxM10S::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payl
   }
 }
 
-esp_err_t MaxM10S::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+esp_err_t MaxM10S::SendUBXInternal(i2c_port_t port, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
   uint16_t total_len = len + 8;
-  uint8_t frame[total_len];
+  std::vector<uint8_t> frame(total_len);
   frame[0] = 0xB5;
   frame[1] = 0x62;
   frame[2] = msgClass;
@@ -246,7 +261,7 @@ esp_err_t MaxM10S::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* paylo
   frame[4] = len & 0xFF;
   frame[5] = (len >> 8) & 0xFF;
   if (len > 0 && payload != nullptr) {
-    memcpy(frame + 6, payload, len);
+    memcpy(frame.data() + 6, payload, len);
   }
 
   uint8_t ck_a = 0, ck_b = 0;
@@ -257,15 +272,7 @@ esp_err_t MaxM10S::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* paylo
   frame[total_len - 2] = ck_a;
   frame[total_len - 1] = ck_b;
 
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write(cmd, frame, total_len, true);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
-
-  return err;
+  return i2c_master_write_to_device(port, address_, frame.data(), total_len, pdMS_TO_TICKS(i2c_timeout_ms_));
 }
 
 esp_err_t MaxM10S::SetMeasurementRate(uint16_t rate_ms) {
@@ -297,70 +304,114 @@ esp_err_t MaxM10S::SetOperatingMode(OperatingMode mode) {
 }
 
 esp_err_t MaxM10S::Standby(uint32_t duration_ms) {
-  uint8_t payload[8];
-  memset(payload, 0, 8);
-  memcpy(payload, &duration_ms, 4);
-  uint32_t flags = 0x02; // Force
-  memcpy(payload + 4, &flags, 4);
-  return SendUBX(0x02, 0x41, payload, 8);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this, duration_ms](i2c_port_t port) {
+    uint8_t payload[8];
+    memset(payload, 0, 8);
+    memcpy(payload, &duration_ms, 4);
+    uint32_t flags = 0x02; // Force
+    memcpy(payload + 4, &flags, 4);
+    return SendUBXInternal(port, 0x02, 0x41, payload, 8);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t MaxM10S::Hibernate(uint32_t duration_ms) {
-  uint8_t payload[8];
-  memset(payload, 0, 8);
-  memcpy(payload, &duration_ms, 4);
-  uint32_t flags = 0x06; // Backup + Force
-  memcpy(payload + 4, &flags, 4);
-  return SendUBX(0x02, 0x41, payload, 8);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this, duration_ms](i2c_port_t port) {
+    uint8_t payload[8];
+    memset(payload, 0, 8);
+    memcpy(payload, &duration_ms, 4);
+    uint32_t flags = 0x06; // Backup + Force
+    memcpy(payload + 4, &flags, 4);
+    return SendUBXInternal(port, 0x02, 0x41, payload, 8);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t MaxM10S::Wake() {
-  // Sending a dummy byte to the I2C address is usually enough to wake the device
-  uint8_t dummy = 0xFF;
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write_byte(cmd, dummy, true);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    uint8_t dummy = 0xFF;
+    return i2c_master_write_to_device(port, address_, &dummy, 1, pdMS_TO_TICKS(i2c_timeout_ms_));
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
 
-  // Wait a bit for the device to wake up
-  vTaskDelay(pdMS_TO_TICKS(50));
-  return err;
+  if (result == ESP_OK) {
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+  return result;
 }
 
 esp_err_t MaxM10S::SetConfig(uint32_t key, uint8_t value) {
   uint8_t payload[9];
-  payload[0] = 0;    // Version 0
-  payload[1] = 0x01; // Layers: 1 = RAM
-  payload[2] = 0;
-  payload[3] = 0;
+  payload[0] = 0; payload[1] = 0x01; payload[2] = 0; payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   payload[8] = value;
-  return SendUBX(0x06, 0x8A, payload, 9);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this, payload](i2c_port_t port) {
+    return SendUBXInternal(port, 0x06, 0x8A, payload, 9);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t MaxM10S::SetConfig(uint32_t key, uint16_t value) {
   uint8_t payload[10];
-  payload[0] = 0;
-  payload[1] = 0x01;
-  payload[2] = 0;
-  payload[3] = 0;
+  payload[0] = 0; payload[1] = 0x01; payload[2] = 0; payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   memcpy(payload + 8, &value, 2);
-  return SendUBX(0x06, 0x8A, payload, 10);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this, payload](i2c_port_t port) {
+    return SendUBXInternal(port, 0x06, 0x8A, payload, 10);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t MaxM10S::SetConfig(uint32_t key, uint32_t value) {
   uint8_t payload[12];
-  payload[0] = 0;
-  payload[1] = 0x01;
-  payload[2] = 0;
-  payload[3] = 0;
+  payload[0] = 0; payload[1] = 0x01; payload[2] = 0; payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   memcpy(payload + 8, &value, 4);
-  return SendUBX(0x06, 0x8A, payload, 12);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this, payload](i2c_port_t port) {
+    return SendUBXInternal(port, 0x06, 0x8A, payload, 12);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t MaxM10S::SetConfig(uint32_t key, bool value) {

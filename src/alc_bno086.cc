@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <cstring>
 #include <cmath>
 
@@ -9,8 +10,8 @@ static const char* TAG = "BNO086";
 
 namespace ALC {
 
-BNO086::BNO086(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
-  : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
+BNO086::BNO086(I2CBusManager& i2c_bus, uint8_t address, uint32_t i2c_timeout_ms)
+  : i2c_bus_(i2c_bus), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
   memset(sequence_number_, 0, sizeof(sequence_number_));
 }
 
@@ -19,33 +20,61 @@ BNO086::~BNO086() {
 }
 
 esp_err_t BNO086::Open() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  OpenAsync([&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
+}
+
+void BNO086::OpenAsync(Callback cb) {
   ESP_LOGI(TAG, "Opening BNO086 at address 0x%02X", address_);
 
-  // Perform soft reset to ensure clean state
-  esp_err_t err = SoftReset();
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Soft reset failed: %s", esp_err_to_name(err));
-    return err;
-  }
-
-  // The sensor sends an advertisement packet after reset.
-  // We poll for it to ensure the sensor is ready.
-  bool ready = false;
-  for (int i = 0; i < 100; ++i) {
-    if (ReceivePacket(10) == ESP_OK) {
-      ParsePacket();
-      ready = true;
-      break;
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    memset(buffer_, 0, sizeof(buffer_));
+    buffer_[4] = 1; // Reset command in executable channel
+    esp_err_t err = SendPacketInternal(port, CHANNEL_EXECUTABLE, 1);
+    if (err == ESP_OK) {
+      memset(sequence_number_, 0, sizeof(sequence_number_));
+      sh2_sequence_number_ = 0;
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
+    return err;
+  }, [this, cb](esp_err_t err) {
+    if (err != ESP_OK) {
+      if (cb) cb(err);
+      return;
+    }
+    PollAdvertisementAsync(100, cb);
+  }, pdMS_TO_TICKS(200));
+}
 
-  if (!ready) {
+void BNO086::PollAdvertisementAsync(int retries, Callback cb) {
+  if (retries <= 0) {
     ESP_LOGW(TAG, "Did not receive advertisement packet, but continuing...");
+    if (cb) cb(ESP_OK);
+    return;
   }
 
-  return ESP_OK;
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    esp_err_t err = ReceivePacketInternal(port, 10);
+    if (err == ESP_OK) {
+      ParsePacket();
+      return ESP_OK;
+    }
+    return ESP_ERR_TIMEOUT;
+  }, [this, retries, cb](esp_err_t err) {
+    if (err == ESP_OK) {
+      if (cb) cb(ESP_OK);
+    } else {
+      PollAdvertisementAsync(retries - 1, cb);
+    }
+  }, pdMS_TO_TICKS(10));
 }
 
 esp_err_t BNO086::Close() {
@@ -53,34 +82,58 @@ esp_err_t BNO086::Close() {
 }
 
 esp_err_t BNO086::SoftReset() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  memset(buffer_, 0, sizeof(buffer_));
-  buffer_[4] = 1; // Reset command in executable channel
-  esp_err_t err = SendPacket(CHANNEL_EXECUTABLE, 1);
-  if (err != ESP_OK) return err;
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    memset(buffer_, 0, sizeof(buffer_));
+    buffer_[4] = 1; // Reset command in executable channel
+    return SendPacketInternal(port, CHANNEL_EXECUTABLE, 1);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
 
-  vTaskDelay(pdMS_TO_TICKS(200)); // Wait for reset to complete
-  memset(sequence_number_, 0, sizeof(sequence_number_));
-  sh2_sequence_number_ = 0;
-  return ESP_OK;
+  if (result == ESP_OK) {
+    vTaskDelay(pdMS_TO_TICKS(200));
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    memset(sequence_number_, 0, sizeof(sequence_number_));
+    sh2_sequence_number_ = 0;
+  }
+  return result;
 }
 
 esp_err_t BNO086::Update() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  int max_packets = 10;
-  while (max_packets-- > 0) {
-    // Use a small but non-zero timeout for polling
-    esp_err_t err = ReceivePacket(2);
-    if (err == ESP_OK) {
-      ParsePacket();
-    } else {
-      break; // No more packets or error
-    }
-  }
-  return ESP_OK;
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
+  UpdateAsync([&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
-esp_err_t BNO086::SendPacket(uint8_t channel, uint16_t len) {
+void BNO086::UpdateAsync(Callback cb) {
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    int max_packets = 10;
+    while (max_packets-- > 0) {
+      esp_err_t err = ReceivePacketInternal(port, 2);
+      if (err == ESP_OK) {
+        ParsePacket();
+      } else {
+        break;
+      }
+    }
+    return ESP_OK;
+  }, cb);
+}
+
+esp_err_t BNO086::SendPacketInternal(i2c_port_t port, uint8_t channel, uint16_t len) {
   uint16_t total_len = len + 4;
   buffer_[0] = total_len & 0xFF;
   buffer_[1] = (total_len >> 8) & 0xFF;
@@ -92,30 +145,22 @@ esp_err_t BNO086::SendPacket(uint8_t channel, uint16_t len) {
   i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
   i2c_master_write(cmd, buffer_, total_len, true);
   i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
+  esp_err_t err = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
   i2c_cmd_link_delete(cmd);
 
   return err;
 }
 
-esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
-  // To avoid the BNO08x discarding packets upon an I2C STOP condition between
-  // header and payload reads, we perform a single transaction reading the
-  // maximum possible packet size we can handle.
+esp_err_t BNO086::ReceivePacketInternal(i2c_port_t port, uint16_t timeout_ms) {
   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
   i2c_master_start(cmd);
   i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-  // We read 256 bytes. The sensor will NACK when it has no more data to send.
   i2c_master_read(cmd, buffer_, sizeof(buffer_), I2C_MASTER_LAST_NACK);
   i2c_master_stop(cmd);
 
-  // Note: This transaction might return ESP_FAIL if the sensor NACKs before
-  // 256 bytes are read. However, the data already read into the buffer
-  // should be valid.
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(timeout_ms > 0 ? timeout_ms : i2c_timeout_ms_));
+  esp_err_t err = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(timeout_ms > 0 ? timeout_ms : i2c_timeout_ms_));
   i2c_cmd_link_delete(cmd);
 
-  // Even if err != ESP_OK, we check if we have a valid-looking header.
   uint16_t length = (buffer_[1] << 8) | buffer_[0];
   length &= 0x7FFF;
 
@@ -123,8 +168,6 @@ esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
     return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
   }
 
-  // If we have a valid header and length, we consider it a success even if
-  // the full 256-byte read didn't complete (due to NACK at end of packet).
   return ESP_OK;
 }
 
@@ -152,9 +195,6 @@ static float qToFloat(int16_t fixed_point, int8_t q_point) {
 
 void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   if (len < 15) return;
-  // payload[0] is sequence
-  // payload[1..6] is angular velocity (Q10)
-  // payload[7..14] is quaternion (Q14)
   int16_t raw_av_x = (payload[2] << 8) | payload[1];
   int16_t raw_av_y = (payload[4] << 8) | payload[3];
   int16_t raw_av_z = (payload[6] << 8) | payload[5];
@@ -163,6 +203,7 @@ void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   int16_t raw_k = (payload[12] << 8) | payload[11];
   int16_t raw_real = (payload[14] << 8) | payload[13];
 
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   gyro_integrated_av_.x = qToFloat(raw_av_x, 10);
   gyro_integrated_av_.y = qToFloat(raw_av_y, 10);
   gyro_integrated_av_.z = qToFloat(raw_av_z, 10);
@@ -177,11 +218,11 @@ void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
   if (len < 1) return;
 
   uint16_t curr = 0;
-  // Check if it's a timestamp base report
   if (payload[curr] == 0xFB) {
-    curr += 5; // ID + 4 bytes timestamp
+    curr += 5;
   }
 
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   while (curr < len) {
     uint8_t report_id = payload[curr];
     if (curr + 1 >= len) break;
@@ -284,7 +325,6 @@ void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
       case SENSOR_REPORTID_STEP_COUNTER: {
         if (curr + 11 >= len) return;
         step_counter_.count = (payload[curr + 9] << 8) | payload[curr + 8];
-        // Latency is 4 bytes at [4..7]
         step_counter_.latency = (payload[curr + 7] << 24) | (payload[curr + 6] << 16) | (payload[curr + 5] << 8) | payload[curr + 4];
         curr += 12;
         break;
@@ -296,7 +336,6 @@ void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
         break;
       }
       default:
-        // Unknown report, skip to end
         curr = len;
         break;
     }
@@ -304,105 +343,142 @@ void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
 }
 
 esp_err_t BNO086::SetFeature(uint8_t report_id, uint32_t period_us) {
-  uint8_t cmd_payload[21];
-  memset(cmd_payload, 0, 21);
-  cmd_payload[0] = SHTP_REPORT_SET_FEATURE_COMMAND;
-  cmd_payload[1] = report_id;
-  cmd_payload[5] = period_us & 0xFF;
-  cmd_payload[6] = (period_us >> 8) & 0xFF;
-  cmd_payload[7] = (period_us >> 16) & 0xFF;
-  cmd_payload[8] = (period_us >> 24) & 0xFF;
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
 
-  memcpy(buffer_ + 4, cmd_payload, 21);
-  return SendPacket(CHANNEL_CONTROL, 21);
+  i2c_bus_.Enqueue([this, report_id, period_us](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    uint8_t cmd_payload[21];
+    memset(cmd_payload, 0, 21);
+    cmd_payload[0] = SHTP_REPORT_SET_FEATURE_COMMAND;
+    cmd_payload[1] = report_id;
+    cmd_payload[5] = period_us & 0xFF;
+    cmd_payload[6] = (period_us >> 8) & 0xFF;
+    cmd_payload[7] = (period_us >> 16) & 0xFF;
+    cmd_payload[8] = (period_us >> 24) & 0xFF;
+
+    memcpy(buffer_ + 4, cmd_payload, 21);
+    return SendPacketInternal(port, CHANNEL_CONTROL, 21);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t BNO086::EnableAccelerometer(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ACCELEROMETER, period_us);
 }
 esp_err_t BNO086::EnableGyroscope(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GYROSCOPE, period_us);
 }
 esp_err_t BNO086::EnableMagnetometer(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_MAGNETIC_FIELD, period_us);
 }
 esp_err_t BNO086::EnableLinearAcceleration(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_LINEAR_ACCELERATION, period_us);
 }
 esp_err_t BNO086::EnableGravity(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GRAVITY, period_us);
 }
 esp_err_t BNO086::EnableRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ROTATION_VECTOR, period_us);
 }
 esp_err_t BNO086::EnableGameRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GAME_ROTATION_VECTOR, period_us);
 }
 esp_err_t BNO086::EnableARVRStabilizedRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us);
 }
 esp_err_t BNO086::EnableARVRStabilizedGameRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us);
 }
 esp_err_t BNO086::EnableStepCounter(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_STEP_COUNTER, period_us);
 }
 esp_err_t BNO086::EnableStabilityClassifier(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_STABILITY_CLASSIFIER, period_us);
 }
 esp_err_t BNO086::EnableGyroIntegratedRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us);
 }
 
 esp_err_t BNO086::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[12];
-  memset(cmd_payload, 0, 12);
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = 0x07; // ME Calibration
-  cmd_payload[3] = accel ? 1 : 0;
-  cmd_payload[4] = gyro ? 1 : 0;
-  cmd_payload[5] = mag ? 1 : 0;
-  cmd_payload[6] = 0x00; // Planar
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
 
-  memcpy(buffer_ + 4, cmd_payload, 12);
-  return SendPacket(CHANNEL_CONTROL, 12);
+  i2c_bus_.Enqueue([this, accel, gyro, mag](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    uint8_t cmd_payload[12];
+    memset(cmd_payload, 0, 12);
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = 0x07; // ME Calibration
+    cmd_payload[3] = accel ? 1 : 0;
+    cmd_payload[4] = gyro ? 1 : 0;
+    cmd_payload[5] = mag ? 1 : 0;
+    cmd_payload[6] = 0x00; // Planar
+
+    memcpy(buffer_ + 4, cmd_payload, 12);
+    return SendPacketInternal(port, CHANNEL_CONTROL, 12);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t BNO086::SaveCalibration() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[3];
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = 0x06; // Save DCD
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
 
-  memcpy(buffer_ + 4, cmd_payload, 3);
-  return SendPacket(CHANNEL_CONTROL, 3);
+  i2c_bus_.Enqueue([this](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    uint8_t cmd_payload[3];
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = 0x06; // Save DCD
+
+    memcpy(buffer_ + 4, cmd_payload, 3);
+    return SendPacketInternal(port, CHANNEL_CONTROL, 3);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 esp_err_t BNO086::SetPowerMode(bool sleep) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[4];
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = SH2_COMMAND_SET_POWER_STATE;
-  cmd_payload[3] = sleep ? 1 : 0; // 0 = ON, 1 = SLEEP
+  SemaphoreHandle_t done = xSemaphoreCreateBinary();
+  esp_err_t result = ESP_FAIL;
 
-  memcpy(buffer_ + 4, cmd_payload, 4);
-  return SendPacket(CHANNEL_CONTROL, 4);
+  i2c_bus_.Enqueue([this, sleep](i2c_port_t port) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    uint8_t cmd_payload[4];
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = SH2_COMMAND_SET_POWER_STATE;
+    cmd_payload[3] = sleep ? 1 : 0; // 0 = ON, 1 = SLEEP
+
+    memcpy(buffer_ + 4, cmd_payload, 4);
+    return SendPacketInternal(port, CHANNEL_CONTROL, 4);
+  }, [&result, done](esp_err_t err) {
+    result = err;
+    xSemaphoreGive(done);
+  });
+
+  xSemaphoreTake(done, portMAX_DELAY);
+  vSemaphoreDelete(done);
+  return result;
 }
 
 } // namespace ALC
