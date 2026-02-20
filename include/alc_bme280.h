@@ -2,6 +2,7 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
+#include <mutex>
 
 namespace ALC {
 
@@ -23,7 +24,7 @@ public:
    *
    * Choosing a value:
    * - X1: Best for battery-critical apps where jitter is acceptable.
-   * - X16: Best for high-precision monitoring (e.g., boat barometer for storm detection).
+   * - X16: Best for high-precision monitoring (e.g., weather/storm detection).
    */
   enum class Oversampling : uint8_t {
     SKIPPED = 0,
@@ -61,8 +62,8 @@ public:
    * @brief Sensor operation modes.
    *
    * - SLEEP: No measurements. Lowest possible power.
-   * - FORCED: (Recommended for Boat case) Sensor takes one measurement, then returns
-   *           to Sleep. Ideal for low-frequency periodic sampling (e.g., every 10 min).
+   * - FORCED: (Recommended for low-frequency sampling) Sensor takes one measurement,
+   *           then returns to Sleep. Ideal for periodic sampling (e.g., every 10 min).
    * - NORMAL: Sensor cycles automatically between measurement and standby.
    *           Ideal for high-frequency data streams.
    */
@@ -140,9 +141,9 @@ public:
   esp_err_t ReadAll();
 
   // Getters
-  float GetTemperature() const { return temperature_; }
-  float GetPressure() const { return pressure_; }
-  float GetHumidity() const { return humidity_; }
+  float GetTemperature() const;
+  float GetPressure() const;
+  float GetHumidity() const;
 
 private:
   esp_err_t ReadCalibrationData();
@@ -179,6 +180,8 @@ private:
   float temperature_{0.0f};
   float pressure_{0.0f};
   float humidity_{0.0f};
+
+  mutable std::recursive_mutex mutex_;
 };
 
 } // namespace ALC

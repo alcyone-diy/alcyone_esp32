@@ -53,6 +53,7 @@ esp_err_t BME280::Init() {
 }
 
 esp_err_t BME280::Configure(const Configuration& config) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   config_ = config;
   return ApplyConfiguration();
 }
@@ -80,10 +81,19 @@ esp_err_t BME280::ApplyConfiguration() {
 }
 
 esp_err_t BME280::ReadAll() {
-  if (config_.mode == SensorMode::FORCED) {
+  SensorMode current_mode;
+  Configuration current_config;
+
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    current_mode = config_.mode;
+    current_config = config_;
+  }
+
+  if (current_mode == SensorMode::FORCED) {
     // Trigger Forced Mode measurement
-    uint8_t ctrl_meas = (static_cast<uint8_t>(config_.temp_os) << 5) |
-                        (static_cast<uint8_t>(config_.press_os) << 2) |
+    uint8_t ctrl_meas = (static_cast<uint8_t>(current_config.temp_os) << 5) |
+                        (static_cast<uint8_t>(current_config.press_os) << 2) |
                         static_cast<uint8_t>(SensorMode::FORCED);
     esp_err_t err = WriteRegister(BME280_REG_CTRL_MEAS, ctrl_meas);
     if (err != ESP_OK) return err;
@@ -112,6 +122,7 @@ esp_err_t BME280::ReadAll() {
   int32_t adc_T = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
   int32_t adc_H = (data[6] << 8) | data[7];
 
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   // Temperature compensation
   int32_t var1, var2;
   var1 = ((((adc_T >> 3) - ((int32_t)calib_.dig_T1 << 1))) * ((int32_t)calib_.dig_T2)) >> 11;
@@ -148,6 +159,21 @@ esp_err_t BME280::ReadAll() {
   humidity_ = (float)(v_x1_u32r >> 12) / 1024.0f;
 
   return ESP_OK;
+}
+
+float BME280::GetTemperature() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return temperature_;
+}
+
+float BME280::GetPressure() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return pressure_;
+}
+
+float BME280::GetHumidity() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return humidity_;
 }
 
 esp_err_t BME280::ReadCalibrationData() {
