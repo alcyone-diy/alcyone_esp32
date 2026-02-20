@@ -218,7 +218,7 @@ void MaxM10S::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payl
       dop_data_.nDOP = readLE<uint16_t>(payload + 14);
       dop_data_.eDOP = readLE<uint16_t>(payload + 16);
     } else if (msgID == 0x35 && len >= 8) { // SAT
-      uint8_t numSvs = payload[3];
+      uint8_t numSvs = payload[5];
       sat_data_.clear();
       for (int i = 0; i < numSvs && (8 + i * 12 + 12 <= len); ++i) {
         const uint8_t* p = payload + 8 + i * 12;
@@ -289,6 +289,44 @@ esp_err_t MaxM10S::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glon
   err = SetConfig(CFG_SIGNAL_BDS_ENA, beidou);
   if (err != ESP_OK) return err;
   err = SetConfig(CFG_SIGNAL_GLO_ENA, glonass);
+  return err;
+}
+
+esp_err_t MaxM10S::SetOperatingMode(OperatingMode mode) {
+  return SetConfig(CFG_PM_OPERATEMODE, (uint8_t)mode);
+}
+
+esp_err_t MaxM10S::Standby(uint32_t duration_ms) {
+  uint8_t payload[8];
+  memset(payload, 0, 8);
+  memcpy(payload, &duration_ms, 4);
+  uint32_t flags = 0x02; // Force
+  memcpy(payload + 4, &flags, 4);
+  return SendUBX(0x02, 0x41, payload, 8);
+}
+
+esp_err_t MaxM10S::Hibernate(uint32_t duration_ms) {
+  uint8_t payload[8];
+  memset(payload, 0, 8);
+  memcpy(payload, &duration_ms, 4);
+  uint32_t flags = 0x06; // Backup + Force
+  memcpy(payload + 4, &flags, 4);
+  return SendUBX(0x02, 0x41, payload, 8);
+}
+
+esp_err_t MaxM10S::Wake() {
+  // Sending a dummy byte to the I2C address is usually enough to wake the device
+  uint8_t dummy = 0xFF;
+  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+  i2c_master_start(cmd);
+  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
+  i2c_master_write_byte(cmd, dummy, true);
+  i2c_master_stop(cmd);
+  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
+  i2c_cmd_link_delete(cmd);
+
+  // Wait a bit for the device to wake up
+  vTaskDelay(pdMS_TO_TICKS(50));
   return err;
 }
 
