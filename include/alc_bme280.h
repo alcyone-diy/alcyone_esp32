@@ -10,6 +10,17 @@ namespace ALC {
  */
 class BME280 {
 public:
+  /**
+   * @brief Oversampling settings for Temperature, Pressure, and Humidity.
+   *
+   * Oversampling reduces noise by averaging multiple raw measurements.
+   * - Pros: Higher resolution, less jitter/noise.
+   * - Cons: Increased power consumption and longer measurement time.
+   *
+   * Choosing a value:
+   * - X1: Good for high-speed tracking or very low power.
+   * - X16: Best for high-precision pressure (e.g., weather/storm detection).
+   */
   enum class Oversampling : uint8_t {
     SKIPPED = 0,
     X1 = 1,
@@ -19,6 +30,17 @@ public:
     X16 = 5
   };
 
+  /**
+   * @brief IIR Filter coefficients.
+   *
+   * The filter smooths out short-term fluctuations (e.g., wind, slamming doors).
+   * - Pros: Much more stable readings, filters out "glitches".
+   * - Cons: Introduces measurement latency (lag). Values take longer to stabilize.
+   *
+   * Choosing a value:
+   * - OFF: Fastest response, most noise.
+   * - COEFF_16: Most stable, but can take several samples to reflect a real change.
+   */
   enum class Filter : uint8_t {
     OFF = 0,
     COEFF_2 = 1,
@@ -27,12 +49,28 @@ public:
     COEFF_16 = 4
   };
 
+  /**
+   * @brief Sensor operation modes.
+   *
+   * - SLEEP: No measurements. Lowest possible power.
+   * - FORCED: (Recommended for Boat case) Sensor takes one measurement, then returns
+   *           to Sleep. Ideal for low-frequency periodic sampling (e.g., every 10 min).
+   * - NORMAL: Sensor cycles automatically between measurement and standby.
+   *           Ideal for high-frequency data streams.
+   */
   enum class SensorMode : uint8_t {
     SLEEP = 0,
     FORCED = 1,
     NORMAL = 3
   };
 
+  /**
+   * @brief Standby duration between measurements in NORMAL mode.
+   *
+   * Only applicable when using SensorMode::NORMAL.
+   * - Pros: High values (e.g., 1000ms) save power.
+   * - Cons: Low values provide faster update rates.
+   */
   enum class StandbyTime : uint8_t {
     MS_0_5 = 0,
     MS_62_5 = 1,

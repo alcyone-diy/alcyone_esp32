@@ -168,7 +168,7 @@ esp_err_t BME280::ReadCalibrationData() {
   calib_.dig_P8 = (data[21] << 8) | data[20];
   calib_.dig_P9 = (data[23] << 8) | data[22];
 
-    err = ReadRegisters(BME280_REG_CALIB_H1, &calib_.dig_H1, 1);
+  err = ReadRegisters(BME280_REG_CALIB_H1, &calib_.dig_H1, 1);
   if (err != ESP_OK) return err;
 
   uint8_t h_data[7];
