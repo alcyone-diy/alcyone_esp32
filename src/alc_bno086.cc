@@ -393,4 +393,16 @@ esp_err_t BNO086::SaveCalibration() {
   return SendPacket(CHANNEL_CONTROL, 3);
 }
 
+esp_err_t BNO086::SetPowerMode(bool sleep) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  uint8_t cmd_payload[4];
+  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+  cmd_payload[1] = sh2_sequence_number_++;
+  cmd_payload[2] = SH2_COMMAND_SET_POWER_STATE;
+  cmd_payload[3] = sleep ? 1 : 0; // 0 = ON, 1 = SLEEP
+
+  memcpy(buffer_ + 4, cmd_payload, 4);
+  return SendPacket(CHANNEL_CONTROL, 4);
+}
+
 } // namespace ALC
