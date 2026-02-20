@@ -8,12 +8,12 @@
 namespace ALC {
 
 /**
- * @brief BNO086 IMU driver for ESP-IDF.
+ * @brief BNO086Sensor IMU driver for ESP-IDF.
  *
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
  *
  * ### Usage
- * 1. Instantiate the @ref BNO086 class with the I2C port and address.
+ * 1. Instantiate the @ref BNO086Sensor class with the I2C port and address.
  * 2. Call @ref Open() to initialize the sensor and perform a soft reset.
  * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors (e.g., @ref EnableRotationVector()).
  * 4. In a loop, call @ref Update() to poll for new packets from the sensor.
@@ -21,7 +21,7 @@ namespace ALC {
  *
  * Example:
  * @code
- * ALC::BNO086 imu(I2C_NUM_0);
+ * ALC::BNO086Sensor imu(I2C_NUM_0);
  * if (imu.Open() == ESP_OK) {
  *     imu.EnableRotationVector(10000); // 10ms period
  *     while (true) {
@@ -33,7 +33,7 @@ namespace ALC {
  * }
  * @endcode
  */
-class BNO086 {
+class BNO086Sensor {
 public:
   /**
    * @brief A 3D vector for sensor data.
@@ -76,20 +76,20 @@ public:
   };
 
   /**
-   * @brief Construct a new BNO086 object.
+   * @brief Construct a new BNO086Sensor object.
    *
    * @param i2c_port I2C port number.
    * @param address I2C address (default is 0x4A, can be 0x4B).
    * @param i2c_timeout_ms I2C transaction timeout in milliseconds (default 100).
    */
-  BNO086(i2c_port_t i2c_port, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
-  ~BNO086();
+  BNO086Sensor(i2c_port_t i2c_port, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
+  ~BNO086Sensor();
 
   // Disable default constructor
-  BNO086() = delete;
+  BNO086Sensor() = delete;
   // Disable copy constructor and assignment
-  BNO086(const BNO086&) = delete;
-  BNO086& operator=(const BNO086&) = delete;
+  BNO086Sensor(const BNO086Sensor&) = delete;
+  BNO086Sensor& operator=(const BNO086Sensor&) = delete;
 
   /**
    * @brief Initialize the sensor. Performs a soft reset and waits for advertisement.

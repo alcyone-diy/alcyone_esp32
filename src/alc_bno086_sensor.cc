@@ -1,26 +1,26 @@
-#include "alc_bno086.h"
+#include "alc_bno086_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 #include <cmath>
 
-static const char* TAG = "BNO086";
+static const char* TAG = "BNO086Sensor";
 
 namespace ALC {
 
-BNO086::BNO086(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
+BNO086Sensor::BNO086Sensor(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
   : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
   memset(sequence_number_, 0, sizeof(sequence_number_));
 }
 
-BNO086::~BNO086() {
+BNO086Sensor::~BNO086Sensor() {
   Close();
 }
 
-esp_err_t BNO086::Open() {
+esp_err_t BNO086Sensor::Open() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
-  ESP_LOGI(TAG, "Opening BNO086 at address 0x%02X", address_);
+  ESP_LOGI(TAG, "Opening BNO086Sensor at address 0x%02X", address_);
 
   // Perform soft reset to ensure clean state
   esp_err_t err = SoftReset();
@@ -48,11 +48,11 @@ esp_err_t BNO086::Open() {
   return ESP_OK;
 }
 
-esp_err_t BNO086::Close() {
+esp_err_t BNO086Sensor::Close() {
   return ESP_OK;
 }
 
-esp_err_t BNO086::SoftReset() {
+esp_err_t BNO086Sensor::SoftReset() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   memset(buffer_, 0, sizeof(buffer_));
   buffer_[4] = 1; // Reset command in executable channel
@@ -65,7 +65,7 @@ esp_err_t BNO086::SoftReset() {
   return ESP_OK;
 }
 
-esp_err_t BNO086::Update() {
+esp_err_t BNO086Sensor::Update() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   int max_packets = 10;
   while (max_packets-- > 0) {
@@ -80,7 +80,7 @@ esp_err_t BNO086::Update() {
   return ESP_OK;
 }
 
-esp_err_t BNO086::SendPacket(uint8_t channel, uint16_t len) {
+esp_err_t BNO086Sensor::SendPacket(uint8_t channel, uint16_t len) {
   uint16_t total_len = len + 4;
   buffer_[0] = total_len & 0xFF;
   buffer_[1] = (total_len >> 8) & 0xFF;
@@ -98,7 +98,7 @@ esp_err_t BNO086::SendPacket(uint8_t channel, uint16_t len) {
   return err;
 }
 
-esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
+esp_err_t BNO086Sensor::ReceivePacket(uint16_t timeout_ms) {
   // To avoid the BNO08x discarding packets upon an I2C STOP condition between
   // header and payload reads, we perform a single transaction reading the
   // maximum possible packet size we can handle.
@@ -128,7 +128,7 @@ esp_err_t BNO086::ReceivePacket(uint16_t timeout_ms) {
   return ESP_OK;
 }
 
-void BNO086::ParsePacket() {
+void BNO086Sensor::ParsePacket() {
   uint8_t channel = buffer_[2];
   uint16_t length = (buffer_[1] << 8) | buffer_[0];
   length &= 0x7FFF;
@@ -150,7 +150,7 @@ static float qToFloat(int16_t fixed_point, int8_t q_point) {
   return ldexpf((float)fixed_point, -q_point);
 }
 
-void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
+void BNO086Sensor::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   if (len < 15) return;
   // payload[0] is sequence
   // payload[1..6] is angular velocity (Q10)
@@ -173,7 +173,7 @@ void BNO086::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   gyro_integrated_rv_.accuracy = 0;
 }
 
-void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
+void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
   if (len < 1) return;
 
   uint16_t curr = 0;
@@ -303,7 +303,7 @@ void BNO086::ParseSH2Report(uint8_t* payload, uint16_t len) {
   }
 }
 
-esp_err_t BNO086::SetFeature(uint8_t report_id, uint32_t period_us) {
+esp_err_t BNO086Sensor::SetFeature(uint8_t report_id, uint32_t period_us) {
   uint8_t cmd_payload[21];
   memset(cmd_payload, 0, 21);
   cmd_payload[0] = SHTP_REPORT_SET_FEATURE_COMMAND;
@@ -317,56 +317,56 @@ esp_err_t BNO086::SetFeature(uint8_t report_id, uint32_t period_us) {
   return SendPacket(CHANNEL_CONTROL, 21);
 }
 
-esp_err_t BNO086::EnableAccelerometer(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableAccelerometer(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ACCELEROMETER, period_us);
 }
-esp_err_t BNO086::EnableGyroscope(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableGyroscope(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GYROSCOPE, period_us);
 }
-esp_err_t BNO086::EnableMagnetometer(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableMagnetometer(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_MAGNETIC_FIELD, period_us);
 }
-esp_err_t BNO086::EnableLinearAcceleration(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableLinearAcceleration(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_LINEAR_ACCELERATION, period_us);
 }
-esp_err_t BNO086::EnableGravity(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableGravity(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GRAVITY, period_us);
 }
-esp_err_t BNO086::EnableRotationVector(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableRotationVector(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ROTATION_VECTOR, period_us);
 }
-esp_err_t BNO086::EnableGameRotationVector(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableGameRotationVector(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GAME_ROTATION_VECTOR, period_us);
 }
-esp_err_t BNO086::EnableARVRStabilizedRotationVector(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableARVRStabilizedRotationVector(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us);
 }
-esp_err_t BNO086::EnableARVRStabilizedGameRotationVector(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableARVRStabilizedGameRotationVector(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us);
 }
-esp_err_t BNO086::EnableStepCounter(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableStepCounter(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_STEP_COUNTER, period_us);
 }
-esp_err_t BNO086::EnableStabilityClassifier(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableStabilityClassifier(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_STABILITY_CLASSIFIER, period_us);
 }
-esp_err_t BNO086::EnableGyroIntegratedRotationVector(uint32_t period_us) {
+esp_err_t BNO086Sensor::EnableGyroIntegratedRotationVector(uint32_t period_us) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return SetFeature(SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us);
 }
 
-esp_err_t BNO086::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
+esp_err_t BNO086Sensor::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   uint8_t cmd_payload[12];
   memset(cmd_payload, 0, 12);
@@ -382,7 +382,7 @@ esp_err_t BNO086::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
   return SendPacket(CHANNEL_CONTROL, 12);
 }
 
-esp_err_t BNO086::SaveCalibration() {
+esp_err_t BNO086Sensor::SaveCalibration() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   uint8_t cmd_payload[3];
   cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
@@ -393,7 +393,7 @@ esp_err_t BNO086::SaveCalibration() {
   return SendPacket(CHANNEL_CONTROL, 3);
 }
 
-esp_err_t BNO086::SetPowerMode(bool sleep) {
+esp_err_t BNO086Sensor::SetPowerMode(bool sleep) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   uint8_t cmd_payload[4];
   cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;

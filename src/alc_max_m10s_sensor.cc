@@ -1,23 +1,23 @@
-#include "alc_max_m10s.h"
+#include "alc_max_m10s_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "MaxM10S";
+static const char* TAG = "MaxM10sSensor";
 
 namespace ALC {
 
-MaxM10S::MaxM10S(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
+MaxM10sSensor::MaxM10sSensor(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
   : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
 }
 
-MaxM10S::~MaxM10S() {
+MaxM10sSensor::~MaxM10sSensor() {
 }
 
-esp_err_t MaxM10S::Open() {
+esp_err_t MaxM10sSensor::Open() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
-  ESP_LOGI(TAG, "Opening MaxM10S at address 0x%02X", address_);
+  ESP_LOGI(TAG, "Opening MaxM10sSensor at address 0x%02X", address_);
 
   // Initial dummy read to clear anything in the buffer
   Update();
@@ -25,7 +25,7 @@ esp_err_t MaxM10S::Open() {
   // Enable UBX-NAV-PVT message on I2C
   esp_err_t err = SetConfig(CFG_MSGOUT_UBX_NAV_PVT_I2C, (uint8_t)1);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to connect to MaxM10S (check I2C): %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "Failed to connect to MaxM10sSensor (check I2C): %s", esp_err_to_name(err));
     return err;
   }
 
@@ -39,11 +39,11 @@ esp_err_t MaxM10S::Open() {
   return ESP_OK;
 }
 
-esp_err_t MaxM10S::Close() {
+esp_err_t MaxM10sSensor::Close() {
   return ESP_OK;
 }
 
-esp_err_t MaxM10S::Update() {
+esp_err_t MaxM10sSensor::Update() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
 
   // Read available length from registers 0xFD and 0xFE
@@ -97,7 +97,7 @@ esp_err_t MaxM10S::Update() {
   return err;
 }
 
-void MaxM10S::ProcessByte(uint8_t byte) {
+void MaxM10sSensor::ProcessByte(uint8_t byte) {
   switch (parse_state_) {
     case ParseState::SYNC1:
       if (byte == 0xB5) parse_state_ = ParseState::SYNC2;
@@ -173,7 +173,7 @@ static T readLE(const uint8_t* buf) {
   return val;
 }
 
-void MaxM10S::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
   if (msgClass == 0x01) { // NAV
     if (msgID == 0x07 && len >= 92) { // PVT
       pvt_data_.iTOW = readLE<uint32_t>(payload + 0);
@@ -236,7 +236,7 @@ void MaxM10S::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payl
   }
 }
 
-esp_err_t MaxM10S::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+esp_err_t MaxM10sSensor::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
   uint16_t total_len = len + 8;
   uint8_t frame[total_len];
   frame[0] = 0xB5;
@@ -268,19 +268,19 @@ esp_err_t MaxM10S::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* paylo
   return err;
 }
 
-esp_err_t MaxM10S::SetMeasurementRate(uint16_t rate_ms) {
+esp_err_t MaxM10sSensor::SetMeasurementRate(uint16_t rate_ms) {
   return SetConfig(CFG_RATE_MEAS, rate_ms);
 }
 
-esp_err_t MaxM10S::SetNavigationRate(uint16_t cycles) {
+esp_err_t MaxM10sSensor::SetNavigationRate(uint16_t cycles) {
   return SetConfig(CFG_RATE_NAV, cycles);
 }
 
-esp_err_t MaxM10S::SetDynamicModel(DynamicModel model) {
+esp_err_t MaxM10sSensor::SetDynamicModel(DynamicModel model) {
   return SetConfig(CFG_NAVSPG_DYNMODEL, (uint8_t)model);
 }
 
-esp_err_t MaxM10S::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass) {
+esp_err_t MaxM10sSensor::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass) {
   esp_err_t err;
   err = SetConfig(CFG_SIGNAL_GPS_ENA, gps);
   if (err != ESP_OK) return err;
@@ -292,11 +292,11 @@ esp_err_t MaxM10S::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glon
   return err;
 }
 
-esp_err_t MaxM10S::SetOperatingMode(OperatingMode mode) {
+esp_err_t MaxM10sSensor::SetOperatingMode(OperatingMode mode) {
   return SetConfig(CFG_PM_OPERATEMODE, (uint8_t)mode);
 }
 
-esp_err_t MaxM10S::Standby(uint32_t duration_ms) {
+esp_err_t MaxM10sSensor::Standby(uint32_t duration_ms) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
@@ -305,7 +305,7 @@ esp_err_t MaxM10S::Standby(uint32_t duration_ms) {
   return SendUBX(0x02, 0x41, payload, 8);
 }
 
-esp_err_t MaxM10S::Hibernate(uint32_t duration_ms) {
+esp_err_t MaxM10sSensor::Hibernate(uint32_t duration_ms) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
@@ -314,7 +314,7 @@ esp_err_t MaxM10S::Hibernate(uint32_t duration_ms) {
   return SendUBX(0x02, 0x41, payload, 8);
 }
 
-esp_err_t MaxM10S::Wake() {
+esp_err_t MaxM10sSensor::Wake() {
   // Sending a dummy byte to the I2C address is usually enough to wake the device
   uint8_t dummy = 0xFF;
   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -330,7 +330,7 @@ esp_err_t MaxM10S::Wake() {
   return err;
 }
 
-esp_err_t MaxM10S::SetConfig(uint32_t key, uint8_t value) {
+esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint8_t value) {
   uint8_t payload[9];
   payload[0] = 0;    // Version 0
   payload[1] = 0x01; // Layers: 1 = RAM
@@ -341,7 +341,7 @@ esp_err_t MaxM10S::SetConfig(uint32_t key, uint8_t value) {
   return SendUBX(0x06, 0x8A, payload, 9);
 }
 
-esp_err_t MaxM10S::SetConfig(uint32_t key, uint16_t value) {
+esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint16_t value) {
   uint8_t payload[10];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -352,7 +352,7 @@ esp_err_t MaxM10S::SetConfig(uint32_t key, uint16_t value) {
   return SendUBX(0x06, 0x8A, payload, 10);
 }
 
-esp_err_t MaxM10S::SetConfig(uint32_t key, uint32_t value) {
+esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint32_t value) {
   uint8_t payload[12];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -363,27 +363,27 @@ esp_err_t MaxM10S::SetConfig(uint32_t key, uint32_t value) {
   return SendUBX(0x06, 0x8A, payload, 12);
 }
 
-esp_err_t MaxM10S::SetConfig(uint32_t key, bool value) {
+esp_err_t MaxM10sSensor::SetConfig(uint32_t key, bool value) {
   return SetConfig(key, (uint8_t)(value ? 1 : 0));
 }
 
-void MaxM10S::ResetParser() {
+void MaxM10sSensor::ResetParser() {
   parse_state_ = ParseState::SYNC1;
   rx_idx_ = 0;
   rx_len_ = 0;
 }
 
-MaxM10S::PVTData MaxM10S::GetPVT() const {
+MaxM10sSensor::PVTData MaxM10sSensor::GetPVT() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return pvt_data_;
 }
 
-MaxM10S::DOPData MaxM10S::GetDOP() const {
+MaxM10sSensor::DOPData MaxM10sSensor::GetDOP() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return dop_data_;
 }
 
-std::vector<MaxM10S::SatInfo> MaxM10S::GetSatellites() const {
+std::vector<MaxM10sSensor::SatInfo> MaxM10sSensor::GetSatellites() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return sat_data_;
 }

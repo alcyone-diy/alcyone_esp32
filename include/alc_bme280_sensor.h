@@ -7,9 +7,9 @@
 namespace ALC {
 
 /**
- * @brief BME280 sensor driver class for ESP-IDF.
+ * @brief BME280Sensor driver class for ESP-IDF.
  */
-class BME280 {
+class BME280Sensor {
 public:
   /**
    * @brief Oversampling settings for Temperature, Pressure, and Humidity.
@@ -103,23 +103,23 @@ public:
   /**
    * @brief Default constructor is deleted.
    */
-  BME280() = delete;
+  BME280Sensor() = delete;
 
   /**
-   * @brief Construct a new BME280 object.
+   * @brief Construct a new BME280Sensor object.
    *
    * @param i2c_port I2C port number.
    * @param address I2C address of the sensor (default: 0x76).
    */
-  explicit BME280(i2c_port_t i2c_port, uint8_t address = 0x76);
+  explicit BME280Sensor(i2c_port_t i2c_port, uint8_t address = 0x76);
 
   /**
    * @brief Copying or moving a sensor instance is not allowed.
    */
-  BME280(const BME280&) = delete;
-  BME280& operator=(const BME280&) = delete;
-  BME280(BME280&&) = delete;
-  BME280& operator=(BME280&&) = delete;
+  BME280Sensor(const BME280Sensor&) = delete;
+  BME280Sensor& operator=(const BME280Sensor&) = delete;
+  BME280Sensor(BME280Sensor&&) = delete;
+  BME280Sensor& operator=(BME280Sensor&&) = delete;
 
   /**
    * @brief Initialize the sensor.
