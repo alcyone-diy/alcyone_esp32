@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/i2c.h"
+#include "alc_i2c_bus_manager.h"
 #include "esp_err.h"
 #include <mutex>
 
@@ -108,10 +108,10 @@ public:
   /**
    * @brief Construct a new BME280Sensor object.
    *
-   * @param i2c_port I2C port number.
+   * @param i2c_bus_manager Reference to the I2C bus manager.
    * @param address I2C address of the sensor (default: 0x76).
    */
-  explicit BME280Sensor(i2c_port_t i2c_port, uint8_t address = 0x76);
+  explicit BME280Sensor(I2CBusManager& i2c_bus_manager, uint8_t address = 0x76);
 
   /**
    * @brief Copying or moving a sensor instance is not allowed.
@@ -123,22 +123,22 @@ public:
 
   /**
    * @brief Initialize the sensor.
-   * @return esp_err_t ESP_OK on success.
+   * @param cb Callback called when initialization is complete.
    */
-  esp_err_t Init();
+  void Init(I2CBusManager::Callback cb = nullptr);
 
   /**
    * @brief Update the sensor configuration.
    * @param config The new configuration settings.
-   * @return esp_err_t ESP_OK on success.
+   * @param cb Callback called when configuration is applied.
    */
-  esp_err_t Configure(const Configuration& config);
+  void Configure(const Configuration& config, I2CBusManager::Callback cb = nullptr);
 
   /**
    * @brief Read all sensor values (temperature, pressure, humidity).
-   * @return esp_err_t ESP_OK on success.
+   * @param cb Callback called when reading is complete.
    */
-  esp_err_t ReadAll();
+  void ReadAll(I2CBusManager::Callback cb = nullptr);
 
   // Getters
   float GetTemperature() const;
@@ -146,12 +146,13 @@ public:
   float GetHumidity() const;
 
 private:
-  esp_err_t ReadCalibrationData();
-  esp_err_t WriteRegister(uint8_t reg, uint8_t value);
-  esp_err_t ReadRegisters(uint8_t reg, uint8_t* data, size_t len);
-  esp_err_t ApplyConfiguration();
+  esp_err_t ReadCalibrationData(i2c_port_t port);
+  esp_err_t WriteRegister(i2c_port_t port, uint8_t reg, uint8_t value);
+  esp_err_t ReadRegisters(i2c_port_t port, uint8_t reg, uint8_t* data, size_t len);
+  esp_err_t ApplyConfiguration(i2c_port_t port);
+  esp_err_t InternalRead(i2c_port_t port);
 
-  i2c_port_t i2c_port_;
+  I2CBusManager& i2c_bus_manager_;
   uint8_t address_;
   Configuration config_;
 

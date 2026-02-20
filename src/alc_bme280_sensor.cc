@@ -23,64 +23,79 @@ static const char* TAG = "BME280Sensor";
 
 namespace ALC {
 
-BME280Sensor::BME280Sensor(i2c_port_t i2c_port, uint8_t address)
-    : i2c_port_(i2c_port), address_(address) {}
+BME280Sensor::BME280Sensor(I2CBusManager& i2c_bus_manager, uint8_t address)
+    : i2c_bus_manager_(i2c_bus_manager), address_(address) {}
 
-esp_err_t BME280Sensor::Init() {
-  uint8_t id;
-  esp_err_t err = ReadRegisters(BME280_REG_ID, &id, 1);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to read ID register (0x%x)", err);
-    return err;
-  }
+void BME280Sensor::Init(I2CBusManager::Callback cb) {
+  i2c_bus_manager_.Enqueue([this](i2c_port_t port) {
+    uint8_t id;
+    esp_err_t err = ReadRegisters(port, BME280_REG_ID, &id, 1);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to read ID register (0x%x)", err);
+      return err;
+    }
 
-  if (id != BME280_ID) {
-    ESP_LOGE(TAG, "Device ID mismatch: expected 0x%02x, got 0x%02x", BME280_ID, id);
-    return ESP_ERR_NOT_FOUND;
-  }
+    if (id != BME280_ID) {
+      ESP_LOGE(TAG, "Device ID mismatch: expected 0x%02x, got 0x%02x", BME280_ID, id);
+      return ESP_ERR_NOT_FOUND;
+    }
 
-  // Reset the device
-  err = WriteRegister(BME280_REG_RESET, BME280_RESET_VALUE);
-  if (err != ESP_OK) return err;
-  vTaskDelay(pdMS_TO_TICKS(10)); // Wait for reset
+    // Reset the device
+    return WriteRegister(port, BME280_REG_RESET, BME280_RESET_VALUE);
+  }, [this, cb](esp_err_t err) {
+    if (err != ESP_OK) {
+      if (cb) cb(err);
+      return;
+    }
 
-  // Read calibration data
-  err = ReadCalibrationData();
-  if (err != ESP_OK) return err;
-
-  // Apply default configuration
-  return ApplyConfiguration();
+    // Wait for reset, then read calibration and apply configuration
+    i2c_bus_manager_.Enqueue([this](i2c_port_t port) {
+      esp_err_t err = ReadCalibrationData(port);
+      if (err != ESP_OK) return err;
+      return ApplyConfiguration(port);
+    }, cb, pdMS_TO_TICKS(10));
+  });
 }
 
-esp_err_t BME280Sensor::Configure(const Configuration& config) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  config_ = config;
-  return ApplyConfiguration();
+void BME280Sensor::Configure(const Configuration& config, I2CBusManager::Callback cb) {
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    config_ = config;
+  }
+  i2c_bus_manager_.Enqueue([this](i2c_port_t port) {
+    return ApplyConfiguration(port);
+  }, cb);
 }
 
-esp_err_t BME280Sensor::ApplyConfiguration() {
+esp_err_t BME280Sensor::ApplyConfiguration(i2c_port_t port) {
+  Configuration config;
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    config = config_;
+  }
+
   // Humidity oversampling
-  esp_err_t err = WriteRegister(BME280_REG_CTRL_HUM, static_cast<uint8_t>(config_.hum_os));
+  esp_err_t err = WriteRegister(port, BME280_REG_CTRL_HUM, static_cast<uint8_t>(config.hum_os));
   if (err != ESP_OK) return err;
 
   // Config: standby time and filter
-  uint8_t config_val = (static_cast<uint8_t>(config_.standby) << 5) | (static_cast<uint8_t>(config_.filter) << 2);
-  err = WriteRegister(BME280_REG_CONFIG, config_val);
+  uint8_t config_val = (static_cast<uint8_t>(config.standby) << 5) | (static_cast<uint8_t>(config.filter) << 2);
+  err = WriteRegister(port, BME280_REG_CONFIG, config_val);
   if (err != ESP_OK) return err;
 
   // CTRL_MEAS: temp oversampling, press oversampling, and mode
   // Note: Writing to CTRL_MEAS triggers the changes for CTRL_HUM too.
-  uint8_t ctrl_meas = (static_cast<uint8_t>(config_.temp_os) << 5) |
-                      (static_cast<uint8_t>(config_.press_os) << 2) |
-                      static_cast<uint8_t>(config_.mode);
-  err = WriteRegister(BME280_REG_CTRL_MEAS, ctrl_meas);
+  uint8_t ctrl_meas = (static_cast<uint8_t>(config.temp_os) << 5) |
+                      (static_cast<uint8_t>(config.press_os) << 2) |
+                      static_cast<uint8_t>(config.mode);
+  err = WriteRegister(port, BME280_REG_CTRL_MEAS, ctrl_meas);
   if (err != ESP_OK) return err;
 
   ESP_LOGI(TAG, "Configuration applied");
   return ESP_OK;
 }
 
-esp_err_t BME280Sensor::ReadAll() {
+void BME280Sensor::ReadAll(I2CBusManager::Callback cb) {
   SensorMode current_mode;
   Configuration current_config;
 
@@ -91,31 +106,32 @@ esp_err_t BME280Sensor::ReadAll() {
   }
 
   if (current_mode == SensorMode::FORCED) {
-    // Trigger Forced Mode measurement
-    uint8_t ctrl_meas = (static_cast<uint8_t>(current_config.temp_os) << 5) |
-                        (static_cast<uint8_t>(current_config.press_os) << 2) |
-                        static_cast<uint8_t>(SensorMode::FORCED);
-    esp_err_t err = WriteRegister(BME280_REG_CTRL_MEAS, ctrl_meas);
-    if (err != ESP_OK) return err;
-
-    // Wait for measurement to complete
-    uint8_t status;
-    int retry = 20;
-    while (retry--) {
-      err = ReadRegisters(BME280_REG_STATUS, &status, 1);
-      if (err != ESP_OK) return err;
-      if (!(status & 0x08)) break; // Bit 3 is 'measuring'
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    if (retry < 0) {
-      ESP_LOGE(TAG, "Timeout waiting for measurement");
-      return ESP_ERR_TIMEOUT;
-    }
+    i2c_bus_manager_.Enqueue([this, current_config](i2c_port_t port) {
+      // Trigger Forced Mode measurement
+      uint8_t ctrl_meas = (static_cast<uint8_t>(current_config.temp_os) << 5) |
+                          (static_cast<uint8_t>(current_config.press_os) << 2) |
+                          static_cast<uint8_t>(SensorMode::FORCED);
+      return WriteRegister(port, BME280_REG_CTRL_MEAS, ctrl_meas);
+    }, [this, cb](esp_err_t err) {
+      if (err != ESP_OK) {
+        if (cb) cb(err);
+        return;
+      }
+      // Wait for measurement to complete (150ms is safe for X16)
+      i2c_bus_manager_.Enqueue([this](i2c_port_t port) {
+        return InternalRead(port);
+      }, cb, pdMS_TO_TICKS(150));
+    });
+  } else {
+    i2c_bus_manager_.Enqueue([this](i2c_port_t port) {
+      return InternalRead(port);
+    }, cb);
   }
+}
 
+esp_err_t BME280Sensor::InternalRead(i2c_port_t port) {
   uint8_t data[8];
-  esp_err_t err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
+  esp_err_t err = ReadRegisters(port, BME280_REG_PRESS_MSB, data, 8);
   if (err != ESP_OK) return err;
 
   int32_t adc_P = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
@@ -176,11 +192,12 @@ float BME280Sensor::GetHumidity() const {
   return humidity_;
 }
 
-esp_err_t BME280Sensor::ReadCalibrationData() {
+esp_err_t BME280Sensor::ReadCalibrationData(i2c_port_t port) {
   uint8_t data[24];
-  esp_err_t err = ReadRegisters(BME280_REG_CALIB_00, data, 24);
+  esp_err_t err = ReadRegisters(port, BME280_REG_CALIB_00, data, 24);
   if (err != ESP_OK) return err;
 
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   calib_.dig_T1 = (data[1] << 8) | data[0];
   calib_.dig_T2 = (data[3] << 8) | data[2];
   calib_.dig_T3 = (data[5] << 8) | data[4];
@@ -194,11 +211,11 @@ esp_err_t BME280Sensor::ReadCalibrationData() {
   calib_.dig_P8 = (data[21] << 8) | data[20];
   calib_.dig_P9 = (data[23] << 8) | data[22];
 
-  err = ReadRegisters(BME280_REG_CALIB_H1, &calib_.dig_H1, 1);
+  err = ReadRegisters(port, BME280_REG_CALIB_H1, &calib_.dig_H1, 1);
   if (err != ESP_OK) return err;
 
   uint8_t h_data[7];
-  err = ReadRegisters(BME280_REG_CALIB_26, h_data, 7);
+  err = ReadRegisters(port, BME280_REG_CALIB_26, h_data, 7);
   if (err != ESP_OK) return err;
 
   calib_.dig_H2 = (h_data[1] << 8) | h_data[0];
@@ -212,13 +229,13 @@ esp_err_t BME280Sensor::ReadCalibrationData() {
   return ESP_OK;
 }
 
-esp_err_t BME280Sensor::WriteRegister(uint8_t reg, uint8_t value) {
+esp_err_t BME280Sensor::WriteRegister(i2c_port_t port, uint8_t reg, uint8_t value) {
   uint8_t data[2] = {reg, value};
-  return i2c_master_write_to_device(i2c_port_, address_, data, 2, pdMS_TO_TICKS(100));
+  return i2c_master_write_to_device(port, address_, data, 2, pdMS_TO_TICKS(100));
 }
 
-esp_err_t BME280Sensor::ReadRegisters(uint8_t reg, uint8_t* data, size_t len) {
-  return i2c_master_write_read_device(i2c_port_, address_, &reg, 1, data, len, pdMS_TO_TICKS(100));
+esp_err_t BME280Sensor::ReadRegisters(i2c_port_t port, uint8_t reg, uint8_t* data, size_t len) {
+  return i2c_master_write_read_device(port, address_, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
 } // namespace ALC
