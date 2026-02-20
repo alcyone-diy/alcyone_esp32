@@ -100,7 +100,7 @@ esp_err_t BME280::ReadAll() {
 
     // Wait for measurement to complete
     uint8_t status;
-    int retry = 10;
+    int retry = 20;
     while (retry--) {
       err = ReadRegisters(BME280_REG_STATUS, &status, 1);
       if (err != ESP_OK) return err;
