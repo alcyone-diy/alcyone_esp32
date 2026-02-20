@@ -80,17 +80,73 @@ public:
 
   /**
    * @brief Dynamic platform model.
+   *
+   * These models optimize the navigation engine for specific use cases by adjusting
+   * filtering parameters (Kalman filter) based on expected motion dynamics.
    */
   enum class DynamicModel : uint8_t {
+    /**
+     * @brief General purpose model.
+     * Pros: Balanced performance for most handheld devices.
+     * Cons: Not optimized for high-speed or highly stable environments.
+     */
     PORTABLE = 0,
+
+    /**
+     * @brief Optimized for zero-velocity environments.
+     * Pros: Extremely stable position when stationary; eliminates "drift" while standing still.
+     * Cons: Very poor response to any motion; might take time to recover once motion starts.
+     */
     STATIONARY = 2,
+
+    /**
+     * @brief For slow-moving users (walking).
+     * Pros: Optimized for low speeds (up to 30km/h); handles typical human motion well.
+     * Cons: Less accurate for high-speed transport.
+     */
     PEDESTRIAN = 3,
+
+    /**
+     * @brief For standard road vehicles.
+     * Pros: Optimized for high acceleration/deceleration and 2D-dominant motion.
+     * Cons: Assumes the vehicle stays on the ground; lower vertical accuracy.
+     */
     AUTOMOTIVE = 4,
+
+    /**
+     * @brief For maritime applications.
+     * Pros: Assumes near-zero vertical motion (sea level); provides very stable 2D fixes.
+     * Cons: Inaccurate if significant altitude changes occur.
+     */
     SEA = 5,
+
+    /**
+     * @brief For high-altitude/high-dynamic scenarios (up to 1g).
+     * Pros: Handles extreme vertical dynamics and high speeds (up to 500m/s).
+     * Cons: Less aggressive filtering leads to more "jitter" at low speeds.
+     */
     AIRBORNE_1G = 6,
+
+    /**
+     * @brief High dynamics up to 2g.
+     */
     AIRBORNE_2G = 7,
+
+    /**
+     * @brief High dynamics up to 4g.
+     */
     AIRBORNE_4G = 8,
+
+    /**
+     * @brief For wrist-worn devices.
+     * Pros: Specifically tuned for arm motion dynamics.
+     */
     WRIST = 9,
+
+    /**
+     * @brief For bicycles.
+     * Pros: Tuned for typical cycling speeds and dynamics.
+     */
     BIKE = 10
   };
 
@@ -140,19 +196,70 @@ public:
    */
   esp_err_t Update();
 
-  // Getters for latest data
+  /**
+   * @brief Get the latest Navigation Position Velocity Time solution.
+   */
   PVTData GetPVT() const;
+
+  /**
+   * @brief Get the latest Dilution of Precision data.
+   */
   DOPData GetDOP() const;
+
+  /**
+   * @brief Get information about currently tracked satellites.
+   */
   std::vector<SatInfo> GetSatellites() const;
 
-  // Configuration Methods
+  /**
+   * @brief Set the measurement rate (elapsed time between measurements).
+   *
+   * @param rate_ms Time in milliseconds (e.g., 100ms for 10Hz, 1000ms for 1Hz).
+   * Pros of high rate: Higher temporal resolution, better for high-speed tracking.
+   * Cons of high rate: Higher power consumption, more I2C load, potentially reduced sensitivity.
+   * @return esp_err_t ESP_OK on success.
+   */
   esp_err_t SetMeasurementRate(uint16_t rate_ms);
+
+  /**
+   * @brief Set the navigation rate (cycles between navigation solutions).
+   *
+   * @param cycles Number of measurement cycles (e.g., 1).
+   * Pros: Can reduce CPU load on the GPS module by calculating fixes less often than measuring.
+   * Cons: Usually best left at 1 for consistent data.
+   * @return esp_err_t ESP_OK on success.
+   */
   esp_err_t SetNavigationRate(uint16_t cycles);
+
+  /**
+   * @brief Set the dynamic platform model for the navigation engine.
+   *
+   * @param model Selected DynamicModel. See enum documentation for pros/cons.
+   * @return esp_err_t ESP_OK on success.
+   */
   esp_err_t SetDynamicModel(DynamicModel model);
+
+  /**
+   * @brief Enable or disable concurrent GNSS systems.
+   *
+   * Concurrent GNSS (e.g., GPS + Galileo) significantly improves availability in difficult
+   * environments like urban canyons.
+   *
+   * @param gps Enable GPS (USA).
+   * @param galileo Enable Galileo (Europe).
+   * @param beidou Enable BeiDou (China).
+   * @param glonass Enable GLONASS (Russia).
+   * Pros of multiple systems: Faster time-to-first-fix, better accuracy, higher SV count.
+   * Cons of multiple systems: Slightly higher power consumption.
+   * @return esp_err_t ESP_OK on success.
+   */
   esp_err_t SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass);
 
   /**
    * @brief Generic configuration using UBX-CFG-VALSET.
+   *
+   * Allows setting any u-blox M10 configuration item using its 32-bit Key ID.
+   * This provides access to advanced features not explicitly wrapped by this class.
    */
   esp_err_t SetConfig(uint32_t key, uint8_t value);
   esp_err_t SetConfig(uint32_t key, uint16_t value);
