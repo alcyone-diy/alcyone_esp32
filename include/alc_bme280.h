@@ -7,12 +7,52 @@ namespace ALC {
 
 /**
  * @brief BME280 sensor driver class for ESP-IDF.
- *
- * This class provides methods to read temperature, pressure, and humidity
- * from a Bosch BME280 sensor connected via I2C.
  */
 class BME280 {
 public:
+  enum class Oversampling : uint8_t {
+    SKIPPED = 0,
+    X1 = 1,
+    X2 = 2,
+    X4 = 3,
+    X8 = 4,
+    X16 = 5
+  };
+
+  enum class Filter : uint8_t {
+    OFF = 0,
+    COEFF_2 = 1,
+    COEFF_4 = 2,
+    COEFF_8 = 3,
+    COEFF_16 = 4
+  };
+
+  enum class SensorMode : uint8_t {
+    SLEEP = 0,
+    FORCED = 1,
+    NORMAL = 3
+  };
+
+  enum class StandbyTime : uint8_t {
+    MS_0_5 = 0,
+    MS_62_5 = 1,
+    MS_125 = 2,
+    MS_250 = 3,
+    MS_500 = 4,
+    MS_1000 = 5,
+    MS_10 = 6,
+    MS_20 = 7
+  };
+
+  struct Configuration {
+    Oversampling temp_os = Oversampling::X1;
+    Oversampling press_os = Oversampling::X1;
+    Oversampling hum_os = Oversampling::X1;
+    Filter filter = Filter::OFF;
+    SensorMode mode = SensorMode::NORMAL;
+    StandbyTime standby = StandbyTime::MS_1000;
+  };
+
   /**
    * @brief Default constructor is deleted.
    */
@@ -21,7 +61,7 @@ public:
   /**
    * @brief Construct a new BME280 object.
    *
-   * @param i2c_port I2C port number (e.g., I2C_NUM_0).
+   * @param i2c_port I2C port number.
    * @param address I2C address of the sensor (default: 0x76).
    */
   explicit BME280(i2c_port_t i2c_port, uint8_t address = 0x76);
@@ -36,52 +76,38 @@ public:
 
   /**
    * @brief Initialize the sensor.
-   *
-   * This method verifies the sensor ID, reads calibration data,
-   * and configures the sensor to 'Normal Mode' for continuous measurement.
-   *
-   * @return esp_err_t ESP_OK on success, or an error code.
+   * @return esp_err_t ESP_OK on success.
    */
   esp_err_t Init();
 
   /**
+   * @brief Update the sensor configuration.
+   * @param config The new configuration settings.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t Configure(const Configuration& config);
+
+  /**
    * @brief Read all sensor values (temperature, pressure, humidity).
-   *
-   * This method fetches the latest raw data from the sensor and applies
-   * compensation formulas. The results are stored internally and can be
-   * accessed via getters.
-   *
-   * @return esp_err_t ESP_OK on success, or an error code.
+   * @return esp_err_t ESP_OK on success.
    */
   esp_err_t ReadAll();
 
-  /**
-   * @brief Get the last read temperature.
-   * @return float Temperature in degrees Celsius.
-   */
+  // Getters
   float GetTemperature() const { return temperature_; }
-
-  /**
-   * @brief Get the last read pressure.
-   * @return float Pressure in hPa (hectopascals).
-   */
   float GetPressure() const { return pressure_; }
-
-  /**
-   * @brief Get the last read humidity.
-   * @return float Relative humidity in percentage (%).
-   */
   float GetHumidity() const { return humidity_; }
 
 private:
   esp_err_t ReadCalibrationData();
   esp_err_t WriteRegister(uint8_t reg, uint8_t value);
   esp_err_t ReadRegisters(uint8_t reg, uint8_t* data, size_t len);
+  esp_err_t ApplyConfiguration();
 
   i2c_port_t i2c_port_;
   uint8_t address_;
+  Configuration config_;
 
-  // Calibration data structure
   struct {
     uint16_t dig_T1;
     int16_t  dig_T2;

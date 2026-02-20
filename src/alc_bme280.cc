@@ -15,6 +15,7 @@ static const char* TAG = "BME280";
 #define BME280_REG_CONFIG      0xF5
 #define BME280_REG_PRESS_MSB   0xF7
 #define BME280_REG_CALIB_00    0x88
+#define BME280_REG_CALIB_H1    0xA1
 #define BME280_REG_CALIB_26    0xE1
 
 #define BME280_ID              0x60
@@ -47,48 +48,64 @@ esp_err_t BME280::Init() {
   err = ReadCalibrationData();
   if (err != ESP_OK) return err;
 
-  // Configure the sensor
-  // Humidity oversampling x1
-  err = WriteRegister(BME280_REG_CTRL_HUM, 0x01);
+  // Apply default configuration
+  return ApplyConfiguration();
+}
+
+esp_err_t BME280::Configure(const Configuration& config) {
+  config_ = config;
+  return ApplyConfiguration();
+}
+
+esp_err_t BME280::ApplyConfiguration() {
+  // Humidity oversampling
+  esp_err_t err = WriteRegister(BME280_REG_CTRL_HUM, static_cast<uint8_t>(config_.hum_os));
   if (err != ESP_OK) return err;
 
-  // Temperature oversampling x1, Pressure oversampling x16, Sleep mode
-  // osrs_t: 001 (x1), osrs_p: 101 (x16)
-  // 0x34 = 001(T) 101(P) 00(Sleep)
-  err = WriteRegister(BME280_REG_CTRL_MEAS, 0x34);
+  // Config: standby time and filter
+  uint8_t config_val = (static_cast<uint8_t>(config_.standby) << 5) | (static_cast<uint8_t>(config_.filter) << 2);
+  err = WriteRegister(BME280_REG_CONFIG, config_val);
   if (err != ESP_OK) return err;
 
-  // Config: filter off
-  err = WriteRegister(BME280_REG_CONFIG, 0x00);
+  // CTRL_MEAS: temp oversampling, press oversampling, and mode
+  // Note: Writing to CTRL_MEAS triggers the changes for CTRL_HUM too.
+  uint8_t ctrl_meas = (static_cast<uint8_t>(config_.temp_os) << 5) |
+                      (static_cast<uint8_t>(config_.press_os) << 2) |
+                      static_cast<uint8_t>(config_.mode);
+  err = WriteRegister(BME280_REG_CTRL_MEAS, ctrl_meas);
   if (err != ESP_OK) return err;
 
-  ESP_LOGI(TAG, "BME280 initialized successfully (Low Power / Forced Mode)");
+  ESP_LOGI(TAG, "Configuration applied");
   return ESP_OK;
 }
 
 esp_err_t BME280::ReadAll() {
-  // Trigger Forced Mode
-  // 0x35 = 001(T) 101(P) 01(Forced)
-  esp_err_t err = WriteRegister(BME280_REG_CTRL_MEAS, 0x35);
-  if (err != ESP_OK) return err;
-
-  // Wait for measurement to complete (measuring bit goes to 0)
-  uint8_t status;
-  int retry = 10;
-  while (retry--) {
-    err = ReadRegisters(BME280_REG_STATUS, &status, 1);
+  if (config_.mode == SensorMode::FORCED) {
+    // Trigger Forced Mode measurement
+    uint8_t ctrl_meas = (static_cast<uint8_t>(config_.temp_os) << 5) |
+                        (static_cast<uint8_t>(config_.press_os) << 2) |
+                        static_cast<uint8_t>(SensorMode::FORCED);
+    esp_err_t err = WriteRegister(BME280_REG_CTRL_MEAS, ctrl_meas);
     if (err != ESP_OK) return err;
-    if (!(status & 0x08)) break; // Bit 3 is 'measuring'
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
 
-  if (retry < 0) {
-    ESP_LOGE(TAG, "Timeout waiting for measurement");
-    return ESP_ERR_TIMEOUT;
+    // Wait for measurement to complete
+    uint8_t status;
+    int retry = 10;
+    while (retry--) {
+      err = ReadRegisters(BME280_REG_STATUS, &status, 1);
+      if (err != ESP_OK) return err;
+      if (!(status & 0x08)) break; // Bit 3 is 'measuring'
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (retry < 0) {
+      ESP_LOGE(TAG, "Timeout waiting for measurement");
+      return ESP_ERR_TIMEOUT;
+    }
   }
 
   uint8_t data[8];
-  err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
+  esp_err_t err = ReadRegisters(BME280_REG_PRESS_MSB, data, 8);
   if (err != ESP_OK) return err;
 
   int32_t adc_P = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
@@ -116,7 +133,7 @@ esp_err_t BME280::ReadAll() {
     v1 = (((int64_t)calib_.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
     v2 = (((int64_t)calib_.dig_P8) * p) >> 19;
     p = ((p + v1 + v2) >> 8) + (((int64_t)calib_.dig_P7) << 4);
-    pressure_ = (float)p / 25600.0f; // Pa to hPa: 256.0 * 100.0
+    pressure_ = (float)p / 25600.0f;
   }
 
   // Humidity compensation
@@ -151,7 +168,7 @@ esp_err_t BME280::ReadCalibrationData() {
   calib_.dig_P8 = (data[21] << 8) | data[20];
   calib_.dig_P9 = (data[23] << 8) | data[22];
 
-  err = ReadRegisters(0xA1, &calib_.dig_H1, 1);
+    err = ReadRegisters(BME280_REG_CALIB_H1, &calib_.dig_H1, 1);
   if (err != ESP_OK) return err;
 
   uint8_t h_data[7];
