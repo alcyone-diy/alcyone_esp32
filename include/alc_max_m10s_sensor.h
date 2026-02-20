@@ -11,7 +11,7 @@ namespace ALC {
 /**
  * @brief Driver for u-blox MAX-M10S GNSS module using UBX protocol over I2C.
  */
-class MaxM10S {
+class MaxM10SSensor {
 public:
   /**
    * @brief Navigation Position Velocity Time Solution data.
@@ -150,16 +150,16 @@ public:
   static constexpr uint32_t CFG_PM_OPERATEMODE = 0x20110052;
 
   /**
-   * @brief Construct a new MaxM10S object.
+   * @brief Construct a new MaxM10SSensor object.
    */
-  explicit MaxM10S(i2c_port_t i2c_port, uint8_t address = 0x42, uint32_t i2c_timeout_ms = 100);
-  ~MaxM10S();
+  explicit MaxM10SSensor(i2c_port_t i2c_port, uint8_t address = 0x42, uint32_t i2c_timeout_ms = 100);
+  ~MaxM10SSensor();
 
-  MaxM10S() = delete;
-  MaxM10S(const MaxM10S&) = delete;
-  MaxM10S& operator=(const MaxM10S&) = delete;
-  MaxM10S(MaxM10S&&) = delete;
-  MaxM10S& operator=(MaxM10S&&) = delete;
+  MaxM10SSensor() = delete;
+  MaxM10SSensor(const MaxM10SSensor&) = delete;
+  MaxM10SSensor& operator=(const MaxM10SSensor&) = delete;
+  MaxM10SSensor(MaxM10SSensor&&) = delete;
+  MaxM10SSensor& operator=(MaxM10SSensor&&) = delete;
 
   /**
    * @brief Initialize communication and basic configuration.

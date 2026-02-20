@@ -1,10 +1,10 @@
-#include "alc_bme280.h"
+#include "alc_bme280_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "BME280";
+static const char* TAG = "BME280Sensor";
 
 // BME280 Registers
 #define BME280_REG_ID          0xD0
@@ -23,10 +23,10 @@ static const char* TAG = "BME280";
 
 namespace ALC {
 
-BME280::BME280(i2c_port_t i2c_port, uint8_t address)
+BME280Sensor::BME280Sensor(i2c_port_t i2c_port, uint8_t address)
     : i2c_port_(i2c_port), address_(address) {}
 
-esp_err_t BME280::Init() {
+esp_err_t BME280Sensor::Init() {
   uint8_t id;
   esp_err_t err = ReadRegisters(BME280_REG_ID, &id, 1);
   if (err != ESP_OK) {
@@ -52,13 +52,13 @@ esp_err_t BME280::Init() {
   return ApplyConfiguration();
 }
 
-esp_err_t BME280::Configure(const Configuration& config) {
+esp_err_t BME280Sensor::Configure(const Configuration& config) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   config_ = config;
   return ApplyConfiguration();
 }
 
-esp_err_t BME280::ApplyConfiguration() {
+esp_err_t BME280Sensor::ApplyConfiguration() {
   // Humidity oversampling
   esp_err_t err = WriteRegister(BME280_REG_CTRL_HUM, static_cast<uint8_t>(config_.hum_os));
   if (err != ESP_OK) return err;
@@ -80,7 +80,7 @@ esp_err_t BME280::ApplyConfiguration() {
   return ESP_OK;
 }
 
-esp_err_t BME280::ReadAll() {
+esp_err_t BME280Sensor::ReadAll() {
   SensorMode current_mode;
   Configuration current_config;
 
@@ -161,22 +161,22 @@ esp_err_t BME280::ReadAll() {
   return ESP_OK;
 }
 
-float BME280::GetTemperature() const {
+float BME280Sensor::GetTemperature() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return temperature_;
 }
 
-float BME280::GetPressure() const {
+float BME280Sensor::GetPressure() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return pressure_;
 }
 
-float BME280::GetHumidity() const {
+float BME280Sensor::GetHumidity() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return humidity_;
 }
 
-esp_err_t BME280::ReadCalibrationData() {
+esp_err_t BME280Sensor::ReadCalibrationData() {
   uint8_t data[24];
   esp_err_t err = ReadRegisters(BME280_REG_CALIB_00, data, 24);
   if (err != ESP_OK) return err;
@@ -212,12 +212,12 @@ esp_err_t BME280::ReadCalibrationData() {
   return ESP_OK;
 }
 
-esp_err_t BME280::WriteRegister(uint8_t reg, uint8_t value) {
+esp_err_t BME280Sensor::WriteRegister(uint8_t reg, uint8_t value) {
   uint8_t data[2] = {reg, value};
   return i2c_master_write_to_device(i2c_port_, address_, data, 2, pdMS_TO_TICKS(100));
 }
 
-esp_err_t BME280::ReadRegisters(uint8_t reg, uint8_t* data, size_t len) {
+esp_err_t BME280Sensor::ReadRegisters(uint8_t reg, uint8_t* data, size_t len) {
   return i2c_master_write_read_device(i2c_port_, address_, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
