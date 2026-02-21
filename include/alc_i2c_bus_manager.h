@@ -56,54 +56,54 @@ public:
   void Enqueue(Operation op, Callback cb = nullptr, TickType_t delay_ticks = 0);
 
   /**
-   * @brief Perform an asynchronous I2C write.
+   * @brief Perform a synchronous I2C write.
    *
-   * This method is safe as it takes ownership of the data by moving the vector.
+   * This method is context-aware:
+   * - If called from within an Enqueue operation (i.e., from the I2CBusManager task),
+   *   it executes the I2C transaction immediately on the bus.
+   * - If called from another task, it enqueues the request and blocks the calling
+   *   task until the transaction is complete.
    *
    * @param address I2C device address.
-   * @param data Data to write. Will be moved into the operation.
-   * @param cb Optional callback called when operation is complete.
-   * @param delay_ticks Optional delay before executing the request.
+   * @param data Pointer to the data to write.
+   * @param len Number of bytes to write.
    * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success, or an error code.
    */
-  void Write(uint8_t address, std::vector<uint8_t> data, Callback cb = nullptr,
-             TickType_t delay_ticks = 0, uint32_t timeout_ms = 100);
+  esp_err_t Write(uint8_t address, const uint8_t* data, size_t len, uint32_t timeout_ms = 100);
 
   /**
-   * @brief Perform an asynchronous I2C read.
+   * @brief Perform a synchronous I2C read.
    *
-   * @note The caller MUST ensure that the provided buffer remains valid until
-   * the callback is executed. This is a zero-copy operation.
+   * This method is context-aware:
+   * - If called from within an Enqueue operation, it executes immediately.
+   * - If called from another task, it enqueues the request and blocks the caller.
    *
    * @param address I2C device address.
    * @param buffer Buffer to store read data.
    * @param len Number of bytes to read.
-   * @param cb Optional callback called when operation is complete.
-   * @param delay_ticks Optional delay before executing the request.
    * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success, or an error code.
    */
-  void Read(uint8_t address, uint8_t* buffer, size_t len, Callback cb = nullptr,
-            TickType_t delay_ticks = 0, uint32_t timeout_ms = 100);
+  esp_err_t Read(uint8_t address, uint8_t* buffer, size_t len, uint32_t timeout_ms = 100);
 
   /**
-   * @brief Perform an asynchronous I2C write followed by a read.
+   * @brief Perform a synchronous I2C write followed by a read.
    *
-   * Often used for reading registers (write register address, then read value).
-   *
-   * @note The caller MUST ensure that the read_buffer remains valid until
-   * the callback is executed. The write_data is safely moved.
+   * This method is context-aware:
+   * - If called from within an Enqueue operation, it executes immediately.
+   * - If called from another task, it enqueues the request and blocks the caller.
    *
    * @param address I2C device address.
-   * @param write_data Data to write. Will be moved into the operation.
+   * @param write_data Pointer to the data to write.
+   * @param write_len Number of bytes to write.
    * @param read_buffer Buffer to store read data.
    * @param read_len Number of bytes to read.
-   * @param cb Optional callback called when operation is complete.
-   * @param delay_ticks Optional delay before executing the request.
    * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success, or an error code.
    */
-  void WriteRead(uint8_t address, std::vector<uint8_t> write_data,
-                 uint8_t* read_buffer, size_t read_len, Callback cb = nullptr,
-                 TickType_t delay_ticks = 0, uint32_t timeout_ms = 100);
+  esp_err_t WriteRead(uint8_t address, const uint8_t* write_data, size_t write_len,
+                     uint8_t* read_buffer, size_t read_len, uint32_t timeout_ms = 100);
 
 private:
   static void TaskEntry(void* pvParameters);
