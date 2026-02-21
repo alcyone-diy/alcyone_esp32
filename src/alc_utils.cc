@@ -9,9 +9,13 @@
 
 #define TAG "ALC_Utils"
 
+namespace ALC {
+
 namespace {
 
 constexpr char kWifiCredsKey[] = "wifi_creds";
+constexpr char kSsidKey[] = "ssid";
+constexpr char kPasswordKey[] = "password";
 
 typedef struct {
   uint32_t free_heap;
@@ -28,8 +32,6 @@ MemoryValues GetMemoryValues() {
 }
 
 }  // namespace
-
-namespace ALC {
 
 void Init() {
   esp_err_t ret = nvs_flash_init();
@@ -97,9 +99,9 @@ esp_err_t AddWifiCredential(Storage& storage, const WifiController::Credential& 
   bool found = false;
   cJSON* item = nullptr;
   cJSON_ArrayForEach(item, array) {
-    cJSON* ssid = cJSON_GetObjectItem(item, "ssid");
+    cJSON* ssid = cJSON_GetObjectItem(item, kSsidKey);
     if (cJSON_IsString(ssid) && credential.ssid == ssid->valuestring) {
-      cJSON_ReplaceItemInObject(item, "password", cJSON_CreateString(credential.password.c_str()));
+      cJSON_ReplaceItemInObject(item, kPasswordKey, cJSON_CreateString(credential.password.c_str()));
       found = true;
       break;
     }
@@ -108,8 +110,8 @@ esp_err_t AddWifiCredential(Storage& storage, const WifiController::Credential& 
   if (!found) {
     cJSON* new_item = cJSON_CreateObject();
     if (new_item != nullptr) {
-      cJSON_AddStringToObject(new_item, "ssid", credential.ssid.c_str());
-      cJSON_AddStringToObject(new_item, "password", credential.password.c_str());
+      cJSON_AddStringToObject(new_item, kSsidKey, credential.ssid.c_str());
+      cJSON_AddStringToObject(new_item, kPasswordKey, credential.password.c_str());
       cJSON_AddItemToArray(array, new_item);
     }
   }
@@ -129,7 +131,7 @@ esp_err_t RemoveWifiCredential(Storage& storage, const char* ssid) {
   bool found = false;
   cJSON* item = nullptr;
   cJSON_ArrayForEach(item, array) {
-    cJSON* ssid_item = cJSON_GetObjectItem(item, "ssid");
+    cJSON* ssid_item = cJSON_GetObjectItem(item, kSsidKey);
     if (cJSON_IsString(ssid_item) && strcmp(ssid, ssid_item->valuestring) == 0) {
       cJSON_DeleteItemFromArray(array, index);
       found = true;
@@ -157,8 +159,8 @@ esp_err_t LoadWifiCredentials(Storage& storage, WifiController& wifi_controller)
 
   cJSON* item = nullptr;
   cJSON_ArrayForEach(item, array) {
-    cJSON* ssid = cJSON_GetObjectItem(item, "ssid");
-    cJSON* password = cJSON_GetObjectItem(item, "password");
+    cJSON* ssid = cJSON_GetObjectItem(item, kSsidKey);
+    cJSON* password = cJSON_GetObjectItem(item, kPasswordKey);
     if (cJSON_IsString(ssid) && cJSON_IsString(password)) {
       wifi_controller.AddCredential({ssid->valuestring, password->valuestring});
     }
