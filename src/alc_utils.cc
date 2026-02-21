@@ -3,8 +3,15 @@
 #include "esp_err.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
+#include "cJSON.h"
+#include "esp_log.h"
+#include <cstring>
+
+#define TAG "ALC_Utils"
 
 namespace {
+
+constexpr char kWifiCredsKey[] = "wifi_creds";
 
 typedef struct {
   uint32_t free_heap;
@@ -76,6 +83,89 @@ void PrintMemory() {
   printf("\tFree heap:         %lu bytes\n", maximum.free_heap);
   printf("\tMinimum free heap: %lu bytes\n", maximum.minimum_free_heap);
   printf("\tFree PSRAM:        %lu bytes\n", maximum.free_psram);
+}
+
+esp_err_t AddWifiCredential(Storage& storage, const WifiController::Credential& credential) {
+  cJSON* array = storage.GetArray(kWifiCredsKey);
+  if (array == nullptr) {
+    array = cJSON_CreateArray();
+    if (array == nullptr) {
+      return ESP_ERR_NO_MEM;
+    }
+  }
+
+  bool found = false;
+  cJSON* item = nullptr;
+  cJSON_ArrayForEach(item, array) {
+    cJSON* ssid = cJSON_GetObjectItem(item, "ssid");
+    if (cJSON_IsString(ssid) && credential.ssid == ssid->valuestring) {
+      cJSON_ReplaceItemInObject(item, "password", cJSON_CreateString(credential.password.c_str()));
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    cJSON* new_item = cJSON_CreateObject();
+    if (new_item != nullptr) {
+      cJSON_AddStringToObject(new_item, "ssid", credential.ssid.c_str());
+      cJSON_AddStringToObject(new_item, "password", credential.password.c_str());
+      cJSON_AddItemToArray(array, new_item);
+    }
+  }
+
+  esp_err_t err = storage.SetArray(kWifiCredsKey, array);
+  cJSON_Delete(array);
+  return err;
+}
+
+esp_err_t RemoveWifiCredential(Storage& storage, const char* ssid) {
+  cJSON* array = storage.GetArray(kWifiCredsKey);
+  if (array == nullptr) {
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  int index = 0;
+  bool found = false;
+  cJSON* item = nullptr;
+  cJSON_ArrayForEach(item, array) {
+    cJSON* ssid_item = cJSON_GetObjectItem(item, "ssid");
+    if (cJSON_IsString(ssid_item) && strcmp(ssid, ssid_item->valuestring) == 0) {
+      cJSON_DeleteItemFromArray(array, index);
+      found = true;
+      break;
+    }
+    index++;
+  }
+
+  esp_err_t err = ESP_OK;
+  if (found) {
+    err = storage.SetArray(kWifiCredsKey, array);
+  } else {
+    err = ESP_ERR_NOT_FOUND;
+  }
+
+  cJSON_Delete(array);
+  return err;
+}
+
+esp_err_t LoadWifiCredentials(Storage& storage, WifiController& wifi_controller) {
+  cJSON* array = storage.GetArray(kWifiCredsKey);
+  if (array == nullptr) {
+    return ESP_OK;
+  }
+
+  cJSON* item = nullptr;
+  cJSON_ArrayForEach(item, array) {
+    cJSON* ssid = cJSON_GetObjectItem(item, "ssid");
+    cJSON* password = cJSON_GetObjectItem(item, "password");
+    if (cJSON_IsString(ssid) && cJSON_IsString(password)) {
+      wifi_controller.AddCredential({ssid->valuestring, password->valuestring});
+    }
+  }
+
+  cJSON_Delete(array);
+  return ESP_OK;
 }
 
 }  // namespace ALC
