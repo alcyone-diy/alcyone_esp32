@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "alc_i2c_bus_manager.h"
 #include <cstdint>
@@ -72,7 +72,7 @@ public:
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address (default is 0x4A, can be 0x4B).
    */
-  explicit BNO086Sensor(I2CBusManager& bus_manager, uint8_t address = 0x4A);
+  explicit BNO086Sensor(I2CBusManager& bus_manager, uint16_t address = 0x4A);
 
   /**
    * @brief Default constructor is deleted.
@@ -221,7 +221,7 @@ public:
 
 private:
   I2CBusManager& bus_manager_;
-  uint8_t address_;
+  uint16_t address_;
   uint8_t sequence_number_[6] = {0}; // SHTP sequence numbers for each channel
   uint8_t sh2_sequence_number_ = 0;   // SH-2 command sequence number
 

@@ -44,7 +44,7 @@ static const char* TAG = "ALC_BNO086Sensor";
 
 namespace ALC {
 
-BNO086Sensor::BNO086Sensor(I2CBusManager& bus_manager, uint8_t address)
+BNO086Sensor::BNO086Sensor(I2CBusManager& bus_manager, uint16_t address)
   : bus_manager_(bus_manager), address_(address) {
   memset(sequence_number_, 0, sizeof(sequence_number_));
 }

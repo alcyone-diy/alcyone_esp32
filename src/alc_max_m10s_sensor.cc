@@ -8,7 +8,7 @@ static const char* TAG = "ALC_MaxM10sSensor";
 
 namespace ALC {
 
-MaxM10sSensor::MaxM10sSensor(I2CBusManager& bus_manager, uint8_t address)
+MaxM10sSensor::MaxM10sSensor(I2CBusManager& bus_manager, uint16_t address)
   : bus_manager_(bus_manager), address_(address) {
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -9,6 +9,7 @@
 #include <vector>
 #include <list>
 #include <mutex>
+#include <map>
 
 namespace ALC {
 
@@ -100,7 +101,7 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t Write(BusToken& token, uint8_t address, const uint8_t* data, size_t len,
+  esp_err_t Write(BusToken& token, uint16_t address, const uint8_t* data, size_t len,
                   uint32_t timeout_ms = 100);
 
   /**
@@ -118,7 +119,7 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t Read(BusToken& token, uint8_t address, uint8_t* buffer, size_t len,
+  esp_err_t Read(BusToken& token, uint16_t address, uint8_t* buffer, size_t len,
                  uint32_t timeout_ms = 100);
 
   /**
@@ -138,7 +139,7 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t WriteRead(BusToken& token, uint8_t address, const uint8_t* write_data,
+  esp_err_t WriteRead(BusToken& token, uint16_t address, const uint8_t* write_data,
                       size_t write_len, uint8_t* read_buffer, size_t read_len,
                       uint32_t timeout_ms = 100);
 
@@ -152,7 +153,7 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success.
    */
-  esp_err_t WriteRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t value,
+  esp_err_t WriteRegister(BusToken& token, uint16_t address, uint8_t reg, uint8_t value,
                           uint32_t timeout_ms = 100);
 
   /**
@@ -165,7 +166,7 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success.
    */
-  esp_err_t ReadRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t* value,
+  esp_err_t ReadRegister(BusToken& token, uint16_t address, uint8_t reg, uint8_t* value,
                          uint32_t timeout_ms = 100);
 
   /**
@@ -179,14 +180,26 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success.
    */
-  esp_err_t ReadRegisters(BusToken& token, uint8_t address, uint8_t reg, uint8_t* data, size_t len,
+  esp_err_t ReadRegisters(BusToken& token, uint16_t address, uint8_t reg, uint8_t* data, size_t len,
                           uint32_t timeout_ms = 100);
 
 private:
   static void TaskEntry(void* pvParameters);
   void TaskLoop();
 
+  /**
+   * @brief Get or create a device handle for the given address.
+   * @param address I2C device address.
+   * @param handle Pointer to store the device handle.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t GetOrCreateDevice(uint16_t address, i2c_master_dev_handle_t* handle);
+
   i2c_port_t port_;
+  i2c_master_bus_handle_t bus_handle_{nullptr};
+  std::map<uint16_t, i2c_master_dev_handle_t> dev_handles_;
+  uint32_t default_clk_speed_{100000};
+
   TaskHandle_t task_handle_{nullptr};
   SemaphoreHandle_t wake_sem_{nullptr};
   std::mutex mutex_;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "alc_i2c_bus_manager.h"
 #include <cstdint>
@@ -159,7 +159,7 @@ public:
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address of the sensor (default: 0x42).
    */
-  explicit MaxM10sSensor(I2CBusManager& bus_manager, uint8_t address = 0x42);
+  explicit MaxM10sSensor(I2CBusManager& bus_manager, uint16_t address = 0x42);
   ~MaxM10sSensor();
 
   MaxM10sSensor() = delete;
@@ -246,7 +246,7 @@ private:
   void HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
 
   I2CBusManager& bus_manager_;
-  uint8_t address_;
+  uint16_t address_;
   mutable std::recursive_mutex mutex_;
 
   PVTData pvt_data_;

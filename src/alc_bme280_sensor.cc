@@ -23,7 +23,7 @@ static const char* TAG = "ALC_BME280Sensor";
 
 namespace ALC {
 
-BME280Sensor::BME280Sensor(I2CBusManager& bus_manager, uint8_t address)
+BME280Sensor::BME280Sensor(I2CBusManager& bus_manager, uint16_t address)
     : bus_manager_(bus_manager), address_(address) {}
 
 void BME280Sensor::Init(Callback cb) {
