@@ -5,7 +5,7 @@
 #include <cstring>
 #include <cmath>
 
-static const char* TAG = "BNO086Sensor";
+static const char* TAG = "ALC_BNO086Sensor";
 
 // SH-2 Report IDs
 #define SHTP_REPORT_COMMAND_RESPONSE                  0xF1
@@ -273,7 +273,8 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         q.real = qToFloat(raw_real, 14);
 
         uint8_t size = 12;
-        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR || report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
+        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR ||
+            report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
           if (curr + 13 >= len) return;
           int16_t raw_acc = (payload[curr + 13] << 8) | payload[curr + 12];
           q.accuracy = qToFloat(raw_acc, 12);
@@ -282,10 +283,15 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
           q.accuracy = 0;
         }
 
-        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR) rotation_vector_ = q;
-        else if (report_id == SENSOR_REPORTID_GAME_ROTATION_VECTOR) game_rotation_vector_ = q;
-        else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) arvr_rotation_vector_ = q;
-        else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR) arvr_game_rotation_vector_ = q;
+        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR) {
+          rotation_vector_ = q;
+        } else if (report_id == SENSOR_REPORTID_GAME_ROTATION_VECTOR) {
+          game_rotation_vector_ = q;
+        } else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
+          arvr_rotation_vector_ = q;
+        } else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR) {
+          arvr_game_rotation_vector_ = q;
+        }
 
         curr += size;
         break;
@@ -293,7 +299,8 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
       case SENSOR_REPORTID_STEP_COUNTER: {
         if (curr + 11 >= len) return;
         step_counter_.count = (payload[curr + 9] << 8) | payload[curr + 8];
-        step_counter_.latency = (payload[curr + 7] << 24) | (payload[curr + 6] << 16) | (payload[curr + 5] << 8) | payload[curr + 4];
+        step_counter_.latency = (payload[curr + 7] << 24) | (payload[curr + 6] << 16) |
+                                (payload[curr + 5] << 8) | payload[curr + 4];
         curr += 12;
         break;
       }

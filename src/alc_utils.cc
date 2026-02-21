@@ -63,7 +63,7 @@ void PrintMemory() {
   if (maximum.free_psram < current.free_psram) {
     maximum.free_psram = current.free_psram;
   }
-  // Mémoire libre totale
+
   printf("Minimum:\n");
   printf("\tFree heap:         %lu bytes\n", minimum.free_heap);
   printf("\tMinimum free heap: %lu bytes\n", minimum.minimum_free_heap);
@@ -73,9 +73,9 @@ void PrintMemory() {
   printf("\tMinimum free heap: %lu bytes\n", current.minimum_free_heap);
   printf("\tFree PSRAM:        %lu bytes\n", current.free_psram);
   printf("Maximum:\n");
-  printf("\tFree heap:         %lu bytes\n", minimum.free_heap);
-  printf("\tMinimum free heap: %lu bytes\n", minimum.minimum_free_heap);
-  printf("\tFree PSRAM:        %lu bytes\n", minimum.free_psram);
+  printf("\tFree heap:         %lu bytes\n", maximum.free_heap);
+  printf("\tMinimum free heap: %lu bytes\n", maximum.minimum_free_heap);
+  printf("\tFree PSRAM:        %lu bytes\n", maximum.free_psram);
 }
 
 }  // namespace ALC

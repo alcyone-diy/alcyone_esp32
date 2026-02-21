@@ -62,9 +62,11 @@ public:
 
   ~I2CBusManager();
 
-  // Delete copy/move
+  // Delete copy/move constructors and assignment operators
   I2CBusManager(const I2CBusManager&) = delete;
   I2CBusManager& operator=(const I2CBusManager&) = delete;
+  I2CBusManager(I2CBusManager&&) = delete;
+  I2CBusManager& operator=(I2CBusManager&&) = delete;
 
   /**
    * @brief Initialize the I2C driver and start the management task.

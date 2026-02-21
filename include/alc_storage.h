@@ -18,95 +18,176 @@ namespace ALC {
  */
 class Storage {
 public:
-    /**
-     * @brief Construct an empty Storage object. Use Open() to initialize.
-     */
-    Storage() = default;
+  /**
+   * @brief Construct an empty Storage object. Use Open() to initialize.
+   */
+  Storage() = default;
 
-    /**
-     * @brief Construct a Storage object with a namespace. Use Open() to initialize.
-     *
-     * @param name_space NVS namespace name (max 15 characters).
-     */
-    Storage(const std::string& name_space);
+  /**
+   * @brief Construct a Storage object with a namespace. Use Open() to initialize.
+   *
+   * @param name_space NVS namespace name (max 15 characters).
+   */
+  explicit Storage(const std::string& name_space);
 
-    /**
-     * @brief Destroy the Storage object and close the NVS handle.
-     */
-    ~Storage();
+  /**
+   * @brief Destroy the Storage object and close the NVS handle.
+   */
+  ~Storage();
 
-    /**
-     * @brief Open the NVS namespace.
-     *
-     * @return esp_err_t ESP_OK on success, or an error code.
-     */
-    esp_err_t Open();
+  // Delete copy/move constructors and assignment operators
+  Storage(const Storage&) = delete;
+  Storage& operator=(const Storage&) = delete;
+  Storage(Storage&&) = delete;
+  Storage& operator=(Storage&&) = delete;
 
-    /**
-     * @brief Close the current NVS namespace.
-     *
-     * @return esp_err_t ESP_OK on success.
-     */
-    esp_err_t Close();
+  /**
+   * @brief Open the NVS namespace.
+   *
+   * @return esp_err_t ESP_OK on success, or an error code.
+   */
+  esp_err_t Open();
 
-    /**
-     * @brief Check if a key exists in the current namespace.
-     *
-     * @param key Key name (max 15 characters).
-     * @return true if the key exists, false otherwise.
-     */
-    bool KeyExists(const std::string& key);
+  /**
+   * @brief Close the current NVS namespace.
+   *
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t Close();
 
-    // Integer support
-    esp_err_t SetInt(const std::string& key, int32_t value);
-    esp_err_t GetInt(const std::string& key, int32_t& value);
+  /**
+   * @brief Check if a key exists in the current namespace.
+   *
+   * @param key Key name (max 15 characters).
+   * @return true if the key exists, false otherwise.
+   */
+  bool KeyExists(const std::string& key);
 
-    // Float support (stored as uint32 bit-pattern)
-    esp_err_t SetFloat(const std::string& key, float value);
-    esp_err_t GetFloat(const std::string& key, float& value);
+  /**
+   * @brief Store an integer value.
+   *
+   * @param key Key name.
+   * @param value Value to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetInt(const std::string& key, int32_t value);
 
-    // String support
-    esp_err_t SetString(const std::string& key, const std::string& value);
-    esp_err_t GetString(const std::string& key, std::string& value);
+  /**
+   * @brief Retrieve an integer value.
+   *
+   * @param key Key name.
+   * @param value Reference to store the retrieved value.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t GetInt(const std::string& key, int32_t& value);
 
-    /**
-     * @brief Store an array or dictionary as a JSON object.
-     *
-     * @param key Key name.
-     * @param json cJSON object to store.
-     * @return esp_err_t ESP_OK on success.
-     */
-    esp_err_t SetJSON(const std::string& key, const cJSON* json);
+  /**
+   * @brief Store a float value (stored as uint32 bit-pattern).
+   *
+   * @param key Key name.
+   * @param value Value to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetFloat(const std::string& key, float value);
 
-    /**
-     * @brief Retrieve an array or dictionary as a JSON object.
-     *
-     * @param key Key name.
-     * @return cJSON* The parsed JSON object, or NULL if not found or invalid.
-     *                The caller is responsible for calling cJSON_Delete() on the returned object.
-     */
-    cJSON* GetJSON(const std::string& key);
+  /**
+   * @brief Retrieve a float value.
+   *
+   * @param key Key name.
+   * @param value Reference to store the retrieved value.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t GetFloat(const std::string& key, float& value);
 
-    // Specific aliases for clarity if desired
-    esp_err_t SetArray(const std::string& key, const cJSON* array) { return SetJSON(key, array); }
-    cJSON* GetArray(const std::string& key) { return GetJSON(key); }
-    esp_err_t SetDictionary(const std::string& key, const cJSON* dict) { return SetJSON(key, dict); }
-    cJSON* GetDictionary(const std::string& key) { return GetJSON(key); }
+  /**
+   * @brief Store a string value.
+   *
+   * @param key Key name.
+   * @param value Value to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetString(const std::string& key, const std::string& value);
 
-    /**
-     * @brief Erase a specific key from storage.
-     */
-    esp_err_t EraseKey(const std::string& key);
+  /**
+   * @brief Retrieve a string value.
+   *
+   * @param key Key name.
+   * @param value Reference to store the retrieved value.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t GetString(const std::string& key, std::string& value);
 
-    /**
-     * @brief Erase all keys in the current namespace.
-     */
-    esp_err_t EraseAll();
+  /**
+   * @brief Store an array or dictionary as a JSON object.
+   *
+   * @param key Key name.
+   * @param json cJSON object to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetJSON(const std::string& key, const cJSON* json);
+
+  /**
+   * @brief Retrieve an array or dictionary as a JSON object.
+   *
+   * @param key Key name.
+   * @return cJSON* The parsed JSON object, or NULL if not found or invalid.
+   *                The caller is responsible for calling cJSON_Delete() on the returned object.
+   */
+  cJSON* GetJSON(const std::string& key);
+
+  /**
+   * @brief Store an array as a JSON object.
+   *
+   * @param key Key name.
+   * @param array cJSON array to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetArray(const std::string& key, const cJSON* array) { return SetJSON(key, array); }
+
+  /**
+   * @brief Retrieve an array as a JSON object.
+   *
+   * @param key Key name.
+   * @return cJSON* The parsed JSON array, or NULL if not found or invalid.
+   */
+  cJSON* GetArray(const std::string& key) { return GetJSON(key); }
+
+  /**
+   * @brief Store a dictionary as a JSON object.
+   *
+   * @param key Key name.
+   * @param dict cJSON dictionary to store.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t SetDictionary(const std::string& key, const cJSON* dict) { return SetJSON(key, dict); }
+
+  /**
+   * @brief Retrieve a dictionary as a JSON object.
+   *
+   * @param key Key name.
+   * @return cJSON* The parsed JSON dictionary, or NULL if not found or invalid.
+   */
+  cJSON* GetDictionary(const std::string& key) { return GetJSON(key); }
+
+  /**
+   * @brief Erase a specific key from storage.
+   *
+   * @param key Key name.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t EraseKey(const std::string& key);
+
+  /**
+   * @brief Erase all keys in the current namespace.
+   *
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t EraseAll();
 
 private:
-    std::string name_space_;
-    nvs_handle_t handle_{0};
-    bool opened_{false};
+  std::string name_space_;
+  nvs_handle_t handle_{0};
+  bool opened_{false};
 };
 
 } // namespace ALC
