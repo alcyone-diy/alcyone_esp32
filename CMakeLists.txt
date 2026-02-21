@@ -19,6 +19,11 @@ idf_component_register(
     "nvs_flash"
     "cjson"
     "driver"
+    "esp_driver_i2c"
+    "esp_driver_gpio"
+    "freertos"
+    "esp_event"
+    "esp_netif"
   PRIV_REQUIRES
     "log"
     "esp_http_client"
