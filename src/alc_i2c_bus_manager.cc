@@ -16,28 +16,32 @@ I2CBusManager::~I2CBusManager() {
   if (wake_sem_) {
     vSemaphoreDelete(wake_sem_);
   }
-  i2c_driver_delete(port_);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto const& [addr, handle] : dev_handles_) {
+    i2c_master_bus_rm_device(handle);
+  }
+  dev_handles_.clear();
+
+  if (bus_handle_) {
+    i2c_del_master_bus(bus_handle_);
+  }
 }
 
 esp_err_t I2CBusManager::Init(int sda_pin, int scl_pin, uint32_t clk_speed) {
-  i2c_config_t conf = {};
-  conf.mode = I2C_MODE_MASTER;
-  conf.sda_io_num = sda_pin;
-  conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-  conf.scl_io_num = scl_pin;
-  conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-  conf.master.clk_speed = clk_speed;
-  conf.clk_flags = 0;
+  default_clk_speed_ = clk_speed;
 
-  esp_err_t err = i2c_param_config(port_, &conf);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
-    return err;
-  }
+  i2c_master_bus_config_t bus_conf = {};
+  bus_conf.i2c_port = port_;
+  bus_conf.sda_io_num = static_cast<gpio_num_t>(sda_pin);
+  bus_conf.scl_io_num = static_cast<gpio_num_t>(scl_pin);
+  bus_conf.clk_source = I2C_CLK_SRC_DEFAULT;
+  bus_conf.glitch_ignore_cnt = 7;
+  bus_conf.flags.enable_internal_pullup = true;
 
-  err = i2c_driver_install(port_, conf.mode, 0, 0, 0);
+  esp_err_t err = i2c_new_master_bus(&bus_conf, &bus_handle_);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "I2C new master bus failed: %s", esp_err_to_name(err));
     return err;
   }
 
@@ -66,43 +70,78 @@ void I2CBusManager::Enqueue(Operation op, Callback cb, TickType_t delay_ticks) {
   xSemaphoreGive(wake_sem_);
 }
 
-esp_err_t I2CBusManager::Write(BusToken& token, uint8_t address, const uint8_t* data, size_t len,
+esp_err_t I2CBusManager::Write(BusToken& token, uint16_t address, const uint8_t* data, size_t len,
                                uint32_t timeout_ms) {
   if (token.manager() != this) return ESP_ERR_INVALID_ARG;
   if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
-  return i2c_master_write_to_device(port_, address, data, len, pdMS_TO_TICKS(timeout_ms));
+
+  i2c_master_dev_handle_t dev_handle;
+  esp_err_t err = GetOrCreateDevice(address, &dev_handle);
+  if (err != ESP_OK) return err;
+
+  return i2c_master_transmit(dev_handle, data, len, static_cast<int>(timeout_ms));
 }
 
-esp_err_t I2CBusManager::Read(BusToken& token, uint8_t address, uint8_t* buffer, size_t len,
+esp_err_t I2CBusManager::Read(BusToken& token, uint16_t address, uint8_t* buffer, size_t len,
                               uint32_t timeout_ms) {
   if (token.manager() != this) return ESP_ERR_INVALID_ARG;
   if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
-  return i2c_master_read_from_device(port_, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
+
+  i2c_master_dev_handle_t dev_handle;
+  esp_err_t err = GetOrCreateDevice(address, &dev_handle);
+  if (err != ESP_OK) return err;
+
+  return i2c_master_receive(dev_handle, buffer, len, static_cast<int>(timeout_ms));
 }
 
-esp_err_t I2CBusManager::WriteRead(BusToken& token, uint8_t address, const uint8_t* write_data,
+esp_err_t I2CBusManager::WriteRead(BusToken& token, uint16_t address, const uint8_t* write_data,
                                    size_t write_len, uint8_t* read_buffer, size_t read_len,
                                    uint32_t timeout_ms) {
   if (token.manager() != this) return ESP_ERR_INVALID_ARG;
   if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
-  return i2c_master_write_read_device(port_, address, write_data, write_len, read_buffer, read_len,
-                                      pdMS_TO_TICKS(timeout_ms));
+
+  i2c_master_dev_handle_t dev_handle;
+  esp_err_t err = GetOrCreateDevice(address, &dev_handle);
+  if (err != ESP_OK) return err;
+
+  return i2c_master_transmit_receive(dev_handle, write_data, write_len, read_buffer, read_len,
+                                      static_cast<int>(timeout_ms));
 }
 
-esp_err_t I2CBusManager::WriteRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t value,
+esp_err_t I2CBusManager::WriteRegister(BusToken& token, uint16_t address, uint8_t reg, uint8_t value,
                                        uint32_t timeout_ms) {
   uint8_t data[2] = {reg, value};
   return Write(token, address, data, 2, timeout_ms);
 }
 
-esp_err_t I2CBusManager::ReadRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t* value,
+esp_err_t I2CBusManager::ReadRegister(BusToken& token, uint16_t address, uint8_t reg, uint8_t* value,
                                       uint32_t timeout_ms) {
   return ReadRegisters(token, address, reg, value, 1, timeout_ms);
 }
 
-esp_err_t I2CBusManager::ReadRegisters(BusToken& token, uint8_t address, uint8_t reg, uint8_t* data,
+esp_err_t I2CBusManager::ReadRegisters(BusToken& token, uint16_t address, uint8_t reg, uint8_t* data,
                                        size_t len, uint32_t timeout_ms) {
   return WriteRead(token, address, &reg, 1, data, len, timeout_ms);
+}
+
+esp_err_t I2CBusManager::GetOrCreateDevice(uint16_t address, i2c_master_dev_handle_t* handle) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = dev_handles_.find(address);
+  if (it != dev_handles_.end()) {
+    *handle = it->second;
+    return ESP_OK;
+  }
+
+  i2c_device_config_t dev_conf = {};
+  dev_conf.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+  dev_conf.device_address = address;
+  dev_conf.scl_speed_hz = default_clk_speed_;
+
+  esp_err_t err = i2c_master_bus_add_device(bus_handle_, &dev_conf, handle);
+  if (err == ESP_OK) {
+    dev_handles_[address] = *handle;
+  }
+  return err;
 }
 
 void I2CBusManager::TaskEntry(void* pvParameters) {

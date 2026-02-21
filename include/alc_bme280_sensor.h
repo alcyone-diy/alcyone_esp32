@@ -114,7 +114,7 @@ public:
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address of the sensor (default: 0x76).
    */
-  explicit BME280Sensor(I2CBusManager& bus_manager, uint8_t address = 0x76);
+  explicit BME280Sensor(I2CBusManager& bus_manager, uint16_t address = 0x76);
 
   /**
    * @brief Copying or moving a sensor instance is not allowed.
@@ -157,7 +157,7 @@ private:
   esp_err_t ReadAndProcessData(BusToken& token);
 
   I2CBusManager& bus_manager_;
-  uint8_t address_;
+  uint16_t address_;
   Configuration config_;
 
   struct {
