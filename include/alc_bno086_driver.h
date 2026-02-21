@@ -8,25 +8,25 @@
 namespace ALC {
 
 /**
- * @brief BNO086Sensor IMU driver for ESP-IDF.
+ * @brief BNO086Driver IMU driver for ESP-IDF.
  *
- * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
+ * This class implements the SH-2 protocol over I2C to communicate with the BNO086 driver.
  * It utilizes the ALC::I2CBusManager for non-blocking, serialized I2C access.
  *
  * ### Usage
- * 1. Instantiate the @ref BNO086Sensor class with a reference to the I2CBusManager.
- * 2. Call @ref Init() to initialize the sensor and perform a soft reset.
- * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors.
+ * 1. Instantiate the @ref BNO086Driver class with a reference to the I2CBusManager.
+ * 2. Call @ref Init() to initialize the driver and perform a soft reset.
+ * 3. Call one or more `Enable...()` methods to start receiving data from specific drivers.
  * 4. Call @ref Update() periodically to poll for new packets.
  * 5. Retrieve the latest data using the corresponding `Get...()` methods.
  */
-class BNO086Sensor {
+class BNO086Driver {
 public:
   using Callback = I2CBusManager::Callback;
   using BusToken = I2CBusManager::BusToken;
 
   /**
-   * @brief A 3D vector for sensor data.
+   * @brief A 3D vector for driver data.
    */
   struct Vector3 {
     float x;           ///< X-axis value (m/s^2 for accel, rad/s for gyro, uT for mag)
@@ -66,34 +66,34 @@ public:
   };
 
   /**
-   * @brief Construct a new BNO086Sensor object.
+   * @brief Construct a new BNO086Driver object.
    *
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address (default is 0x4A, can be 0x4B).
    */
-  explicit BNO086Sensor(I2CBusManager& bus_manager, uint16_t address = 0x4A);
+  explicit BNO086Driver(I2CBusManager& bus_manager, uint16_t address = 0x4A);
 
   /**
    * @brief Default constructor is deleted.
    */
-  BNO086Sensor() = delete;
+  BNO086Driver() = delete;
 
   /**
-   * @brief Copying or moving a sensor instance is not allowed.
+   * @brief Copying or moving a driver instance is not allowed.
    */
-  BNO086Sensor(const BNO086Sensor&) = delete;
-  BNO086Sensor& operator=(const BNO086Sensor&) = delete;
-  BNO086Sensor(BNO086Sensor&&) = delete;
-  BNO086Sensor& operator=(BNO086Sensor&&) = delete;
+  BNO086Driver(const BNO086Driver&) = delete;
+  BNO086Driver& operator=(const BNO086Driver&) = delete;
+  BNO086Driver(BNO086Driver&&) = delete;
+  BNO086Driver& operator=(BNO086Driver&&) = delete;
 
   /**
-   * @brief Initialize the sensor. Performs a soft reset and waits for advertisement.
+   * @brief Initialize the driver. Performs a soft reset and waits for advertisement.
    * @param cb Optional callback called when initialization is complete.
    */
   void Init(Callback cb = nullptr);
 
   /**
-   * @brief Read pending packets from the sensor. Non-blocking.
+   * @brief Read pending packets from the driver. Non-blocking.
    * @param cb Optional callback called when update is complete.
    */
   void Update(Callback cb = nullptr);
@@ -188,18 +188,18 @@ public:
   void SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb = nullptr);
 
   /**
-   * @brief Command the sensor to save its current calibration to flash.
+   * @brief Command the driver to save its current calibration to flash.
    */
   void SaveCalibration(Callback cb = nullptr);
 
   /**
-   * @brief Perform a soft reset of the sensor.
+   * @brief Perform a soft reset of the driver.
    */
   void SoftReset(Callback cb = nullptr);
 
   /**
-   * @brief Set the sensor power mode.
-   * @param sleep True to put the sensor to sleep, false to wake it up (On).
+   * @brief Set the driver power mode.
+   * @param sleep True to put the driver to sleep, false to wake it up (On).
    */
   void SetPowerMode(bool sleep, Callback cb = nullptr);
 

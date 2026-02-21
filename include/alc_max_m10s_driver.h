@@ -11,7 +11,7 @@ namespace ALC {
 /**
  * @brief Driver for u-blox MAX-M10S GNSS module using UBX protocol over I2C.
  */
-class MaxM10sSensor {
+class MaxM10sDriver {
 public:
   using Callback = I2CBusManager::Callback;
   using BusToken = I2CBusManager::BusToken;
@@ -153,19 +153,19 @@ public:
   static constexpr uint32_t CFG_PM_OPERATEMODE = 0x20110052;
 
   /**
-   * @brief Construct a new MaxM10sSensor object.
+   * @brief Construct a new MaxM10sDriver object.
    *
    * @param bus_manager Reference to the I2C bus manager.
-   * @param address I2C address of the sensor (default: 0x42).
+   * @param address I2C address of the driver (default: 0x42).
    */
-  explicit MaxM10sSensor(I2CBusManager& bus_manager, uint16_t address = 0x42);
-  ~MaxM10sSensor();
+  explicit MaxM10sDriver(I2CBusManager& bus_manager, uint16_t address = 0x42);
+  ~MaxM10sDriver();
 
-  MaxM10sSensor() = delete;
-  MaxM10sSensor(const MaxM10sSensor&) = delete;
-  MaxM10sSensor& operator=(const MaxM10sSensor&) = delete;
-  MaxM10sSensor(MaxM10sSensor&&) = delete;
-  MaxM10sSensor& operator=(MaxM10sSensor&&) = delete;
+  MaxM10sDriver() = delete;
+  MaxM10sDriver(const MaxM10sDriver&) = delete;
+  MaxM10sDriver& operator=(const MaxM10sDriver&) = delete;
+  MaxM10sDriver(MaxM10sDriver&&) = delete;
+  MaxM10sDriver& operator=(MaxM10sDriver&&) = delete;
 
   /**
    * @brief Initialize communication and basic configuration.

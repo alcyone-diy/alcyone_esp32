@@ -5,9 +5,9 @@ idf_component_register(
     "src/alc_utils.cc"
     "src/alc_wifi_controller.cc"
     "src/alc_i2c_bus_manager.cc"
-    "src/alc_bme280_sensor.cc"
-    "src/alc_bno086_sensor.cc"
-    "src/alc_max_m10s_sensor.cc"
+    "src/alc_bme280_driver.cc"
+    "src/alc_bno086_driver.cc"
+    "src/alc_max_m10s_driver.cc"
   PRIV_INCLUDE_DIRS
     "src"
   INCLUDE_DIRS

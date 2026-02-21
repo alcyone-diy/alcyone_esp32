@@ -1,10 +1,10 @@
-#include "alc_bme280_sensor.h"
+#include "alc_bme280_driver.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "ALC_BME280Sensor";
+static const char* TAG = "ALC_BME280Driver";
 
 // BME280 Registers
 #define BME280_REG_ID          0xD0
@@ -23,10 +23,10 @@ static const char* TAG = "ALC_BME280Sensor";
 
 namespace ALC {
 
-BME280Sensor::BME280Sensor(I2CBusManager& bus_manager, uint16_t address)
+BME280Driver::BME280Driver(I2CBusManager& bus_manager, uint16_t address)
     : bus_manager_(bus_manager), address_(address) {}
 
-void BME280Sensor::Init(Callback cb) {
+void BME280Driver::Init(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) -> esp_err_t {
     uint8_t id;
     esp_err_t err = bus_manager_.ReadRegister(token, address_, BME280_REG_ID, &id);
@@ -58,7 +58,7 @@ void BME280Sensor::Init(Callback cb) {
   });
 }
 
-void BME280Sensor::Configure(const Configuration& config, Callback cb) {
+void BME280Driver::Configure(const Configuration& config, Callback cb) {
   {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     config_ = config;
@@ -68,7 +68,7 @@ void BME280Sensor::Configure(const Configuration& config, Callback cb) {
   }, cb);
 }
 
-esp_err_t BME280Sensor::ApplyConfiguration(BusToken& token) {
+esp_err_t BME280Driver::ApplyConfiguration(BusToken& token) {
   Configuration current_config;
   {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -98,14 +98,14 @@ esp_err_t BME280Sensor::ApplyConfiguration(BusToken& token) {
   return ESP_OK;
 }
 
-void BME280Sensor::ReadAll(Callback cb) {
-  SensorMode current_mode;
+void BME280Driver::ReadAll(Callback cb) {
+  DriverMode current_mode;
   {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     current_mode = config_.mode;
   }
 
-  if (current_mode == SensorMode::FORCED) {
+  if (current_mode == DriverMode::FORCED) {
     bus_manager_.Enqueue([this](BusToken& token) -> esp_err_t {
       Configuration current_config;
       {
@@ -115,7 +115,7 @@ void BME280Sensor::ReadAll(Callback cb) {
       // Trigger Forced Mode measurement
       uint8_t ctrl_meas = (static_cast<uint8_t>(current_config.temp_os) << 5) |
                           (static_cast<uint8_t>(current_config.press_os) << 2) |
-                          static_cast<uint8_t>(SensorMode::FORCED);
+                          static_cast<uint8_t>(DriverMode::FORCED);
       return bus_manager_.WriteRegister(token, address_, BME280_REG_CTRL_MEAS, ctrl_meas);
     }, [this, cb](esp_err_t err) {
       if (err != ESP_OK) {
@@ -134,7 +134,7 @@ void BME280Sensor::ReadAll(Callback cb) {
   }
 }
 
-esp_err_t BME280Sensor::ReadAndProcessData(BusToken& token) {
+esp_err_t BME280Driver::ReadAndProcessData(BusToken& token) {
   uint8_t data[8];
   esp_err_t err = bus_manager_.ReadRegisters(token, address_, BME280_REG_PRESS_MSB, data, 8);
   if (err != ESP_OK) return err;
@@ -190,22 +190,22 @@ esp_err_t BME280Sensor::ReadAndProcessData(BusToken& token) {
   return ESP_OK;
 }
 
-float BME280Sensor::GetTemperature() const {
+float BME280Driver::GetTemperature() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return temperature_;
 }
 
-float BME280Sensor::GetPressure() const {
+float BME280Driver::GetPressure() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return pressure_;
 }
 
-float BME280Sensor::GetHumidity() const {
+float BME280Driver::GetHumidity() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return humidity_;
 }
 
-esp_err_t BME280Sensor::ReadCalibrationData(BusToken& token) {
+esp_err_t BME280Driver::ReadCalibrationData(BusToken& token) {
   uint8_t data[24];
   esp_err_t err = bus_manager_.ReadRegisters(token, address_, BME280_REG_CALIB_00, data, 24);
   if (err != ESP_OK) return err;

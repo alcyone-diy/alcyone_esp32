@@ -1,23 +1,23 @@
-#include "alc_max_m10s_sensor.h"
+#include "alc_max_m10s_driver.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "ALC_MaxM10sSensor";
+static const char* TAG = "ALC_MaxM10sDriver";
 
 namespace ALC {
 
-MaxM10sSensor::MaxM10sSensor(I2CBusManager& bus_manager, uint16_t address)
+MaxM10sDriver::MaxM10sDriver(I2CBusManager& bus_manager, uint16_t address)
   : bus_manager_(bus_manager), address_(address) {
 }
 
-MaxM10sSensor::~MaxM10sSensor() {
+MaxM10sDriver::~MaxM10sDriver() {
 }
 
-void MaxM10sSensor::Init(Callback cb) {
+void MaxM10sDriver::Init(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) -> esp_err_t {
-    ESP_LOGI(TAG, "Initializing MaxM10sSensor at address 0x%02X", address_);
+    ESP_LOGI(TAG, "Initializing MaxM10sDriver at address 0x%02X", address_);
 
     // Initial dummy read to clear anything in the buffer
     UpdateInternal(token);
@@ -25,7 +25,7 @@ void MaxM10sSensor::Init(Callback cb) {
     // Enable UBX-NAV-PVT message on I2C
     esp_err_t err = SetConfigInternal(token, CFG_MSGOUT_UBX_NAV_PVT_I2C, (uint8_t)1);
     if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Failed to connect to MaxM10sSensor: %s", esp_err_to_name(err));
+      ESP_LOGE(TAG, "Failed to connect to MaxM10sDriver: %s", esp_err_to_name(err));
       return err;
     }
 
@@ -38,16 +38,16 @@ void MaxM10sSensor::Init(Callback cb) {
   }, cb);
 }
 
-void MaxM10sSensor::Close() {
+void MaxM10sDriver::Close() {
 }
 
-void MaxM10sSensor::Update(Callback cb) {
+void MaxM10sDriver::Update(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     return UpdateInternal(token);
   }, cb);
 }
 
-esp_err_t MaxM10sSensor::UpdateInternal(BusToken& token) {
+esp_err_t MaxM10sDriver::UpdateInternal(BusToken& token) {
   // Read available length from registers 0xFD and 0xFE
   uint8_t len_reg = 0xFD;
   uint8_t len_bytes[2] = {0, 0};
@@ -82,7 +82,7 @@ esp_err_t MaxM10sSensor::UpdateInternal(BusToken& token) {
   return err;
 }
 
-void MaxM10sSensor::ProcessByte(uint8_t byte) {
+void MaxM10sDriver::ProcessByte(uint8_t byte) {
   switch (parse_state_) {
     case ParseState::SYNC1:
       if (byte == 0xB5) parse_state_ = ParseState::SYNC2;
@@ -158,7 +158,7 @@ static T readLE(const uint8_t* buf) {
   return val;
 }
 
-void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload,
+void MaxM10sDriver::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload,
                                   uint16_t len) {
   if (msgClass == 0x01) { // NAV
     if (msgID == 0x07 && len >= 92) { // PVT
@@ -222,7 +222,7 @@ void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t
   }
 }
 
-esp_err_t MaxM10sSensor::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID,
+esp_err_t MaxM10sDriver::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID,
                                   const uint8_t* payload, uint16_t len) {
   uint16_t total_len = len + 8;
   std::vector<uint8_t> frame(total_len);
@@ -247,19 +247,19 @@ esp_err_t MaxM10sSensor::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgI
   return bus_manager_.Write(token, address_, frame.data(), total_len);
 }
 
-void MaxM10sSensor::SetMeasurementRate(uint16_t rate_ms, Callback cb) {
+void MaxM10sDriver::SetMeasurementRate(uint16_t rate_ms, Callback cb) {
   SetConfig(CFG_RATE_MEAS, rate_ms, cb);
 }
 
-void MaxM10sSensor::SetNavigationRate(uint16_t cycles, Callback cb) {
+void MaxM10sDriver::SetNavigationRate(uint16_t cycles, Callback cb) {
   SetConfig(CFG_RATE_NAV, cycles, cb);
 }
 
-void MaxM10sSensor::SetDynamicModel(DynamicModel model, Callback cb) {
+void MaxM10sDriver::SetDynamicModel(DynamicModel model, Callback cb) {
   SetConfig(CFG_NAVSPG_DYNMODEL, (uint8_t)model, cb);
 }
 
-void MaxM10sSensor::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass, Callback cb) {
+void MaxM10sDriver::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass, Callback cb) {
   bus_manager_.Enqueue([this, gps, galileo, beidou, glonass](BusToken& token) -> esp_err_t {
     esp_err_t err = SetConfigInternal(token, CFG_SIGNAL_GPS_ENA, gps);
     if (err != ESP_OK) return err;
@@ -271,11 +271,11 @@ void MaxM10sSensor::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glo
   }, cb);
 }
 
-void MaxM10sSensor::SetOperatingMode(OperatingMode mode, Callback cb) {
+void MaxM10sDriver::SetOperatingMode(OperatingMode mode, Callback cb) {
   SetConfig(CFG_PM_OPERATEMODE, (uint8_t)mode, cb);
 }
 
-void MaxM10sSensor::Standby(uint32_t duration_ms, Callback cb) {
+void MaxM10sDriver::Standby(uint32_t duration_ms, Callback cb) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
@@ -288,7 +288,7 @@ void MaxM10sSensor::Standby(uint32_t duration_ms, Callback cb) {
   }, cb);
 }
 
-void MaxM10sSensor::Hibernate(uint32_t duration_ms, Callback cb) {
+void MaxM10sDriver::Hibernate(uint32_t duration_ms, Callback cb) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
@@ -301,7 +301,7 @@ void MaxM10sSensor::Hibernate(uint32_t duration_ms, Callback cb) {
   }, cb);
 }
 
-void MaxM10sSensor::Wake(Callback cb) {
+void MaxM10sDriver::Wake(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     // Sending a dummy byte to the I2C address is usually enough to wake the device
     uint8_t dummy = 0xFF;
@@ -316,29 +316,29 @@ void MaxM10sSensor::Wake(Callback cb) {
   });
 }
 
-void MaxM10sSensor::SetConfig(uint32_t key, uint8_t value, Callback cb) {
+void MaxM10sDriver::SetConfig(uint32_t key, uint8_t value, Callback cb) {
   bus_manager_.Enqueue([this, key, value](BusToken& token) {
     return SetConfigInternal(token, key, value);
   }, cb);
 }
 
-void MaxM10sSensor::SetConfig(uint32_t key, uint16_t value, Callback cb) {
+void MaxM10sDriver::SetConfig(uint32_t key, uint16_t value, Callback cb) {
   bus_manager_.Enqueue([this, key, value](BusToken& token) {
     return SetConfigInternal(token, key, value);
   }, cb);
 }
 
-void MaxM10sSensor::SetConfig(uint32_t key, uint32_t value, Callback cb) {
+void MaxM10sDriver::SetConfig(uint32_t key, uint32_t value, Callback cb) {
   bus_manager_.Enqueue([this, key, value](BusToken& token) {
     return SetConfigInternal(token, key, value);
   }, cb);
 }
 
-void MaxM10sSensor::SetConfig(uint32_t key, bool value, Callback cb) {
+void MaxM10sDriver::SetConfig(uint32_t key, bool value, Callback cb) {
   SetConfig(key, (uint8_t)(value ? 1 : 0), cb);
 }
 
-esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint8_t value) {
+esp_err_t MaxM10sDriver::SetConfigInternal(BusToken& token, uint32_t key, uint8_t value) {
   uint8_t payload[9];
   payload[0] = 0;    // Version 0
   payload[1] = 0x01; // Layers: 1 = RAM
@@ -349,7 +349,7 @@ esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint8_
   return SendUBX(token, 0x06, 0x8A, payload, 9);
 }
 
-esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint16_t value) {
+esp_err_t MaxM10sDriver::SetConfigInternal(BusToken& token, uint32_t key, uint16_t value) {
   uint8_t payload[10];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -360,7 +360,7 @@ esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint16
   return SendUBX(token, 0x06, 0x8A, payload, 10);
 }
 
-esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint32_t value) {
+esp_err_t MaxM10sDriver::SetConfigInternal(BusToken& token, uint32_t key, uint32_t value) {
   uint8_t payload[12];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -371,28 +371,28 @@ esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint32
   return SendUBX(token, 0x06, 0x8A, payload, 12);
 }
 
-esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, bool value) {
+esp_err_t MaxM10sDriver::SetConfigInternal(BusToken& token, uint32_t key, bool value) {
   return SetConfigInternal(token, key, (uint8_t)(value ? 1 : 0));
 }
 
-void MaxM10sSensor::ResetParser() {
+void MaxM10sDriver::ResetParser() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   parse_state_ = ParseState::SYNC1;
   rx_idx_ = 0;
   rx_len_ = 0;
 }
 
-MaxM10sSensor::PVTData MaxM10sSensor::GetPVT() const {
+MaxM10sDriver::PVTData MaxM10sDriver::GetPVT() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return pvt_data_;
 }
 
-MaxM10sSensor::DOPData MaxM10sSensor::GetDOP() const {
+MaxM10sDriver::DOPData MaxM10sDriver::GetDOP() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return dop_data_;
 }
 
-std::vector<MaxM10sSensor::SatInfo> MaxM10sSensor::GetSatellites() const {
+std::vector<MaxM10sDriver::SatInfo> MaxM10sDriver::GetSatellites() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return sat_data_;
 }

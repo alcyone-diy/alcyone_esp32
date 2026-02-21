@@ -7,9 +7,9 @@
 namespace ALC {
 
 /**
- * @brief BME280Sensor driver class for ESP-IDF.
+ * @brief BME280Driver driver class for ESP-IDF.
  */
-class BME280Sensor {
+class BME280Driver {
 public:
   using Callback = I2CBusManager::Callback;
   using BusToken = I2CBusManager::BusToken;
@@ -62,15 +62,15 @@ public:
   };
 
   /**
-   * @brief Sensor operation modes.
+   * @brief Driver operation modes.
    *
    * - SLEEP: No measurements. Lowest possible power.
-   * - FORCED: (Recommended for low-frequency sampling) Sensor takes one measurement,
+   * - FORCED: (Recommended for low-frequency sampling) Driver takes one measurement,
    *           then returns to Sleep. Ideal for periodic sampling (e.g., every 10 min).
-   * - NORMAL: Sensor cycles automatically between measurement and standby.
+   * - NORMAL: Driver cycles automatically between measurement and standby.
    *           Ideal for high-frequency data streams.
    */
-  enum class SensorMode : uint8_t {
+  enum class DriverMode : uint8_t {
     SLEEP = 0,
     FORCED = 1,
     NORMAL = 3
@@ -79,7 +79,7 @@ public:
   /**
    * @brief Standby duration between measurements in NORMAL mode.
    *
-   * Only applicable when using SensorMode::NORMAL.
+   * Only applicable when using DriverMode::NORMAL.
    * - Pros: High values (e.g., 1000ms) save power.
    * - Cons: Low values provide faster update rates.
    */
@@ -99,40 +99,40 @@ public:
     Oversampling press_os = Oversampling::X1;
     Oversampling hum_os = Oversampling::X1;
     Filter filter = Filter::OFF;
-    SensorMode mode = SensorMode::NORMAL;
+    DriverMode mode = DriverMode::NORMAL;
     StandbyTime standby = StandbyTime::MS_1000;
   };
 
   /**
    * @brief Default constructor is deleted.
    */
-  BME280Sensor() = delete;
+  BME280Driver() = delete;
 
   /**
-   * @brief Construct a new BME280Sensor object.
+   * @brief Construct a new BME280Driver object.
    *
    * @param bus_manager Reference to the I2C bus manager.
-   * @param address I2C address of the sensor (default: 0x76).
+   * @param address I2C address of the driver (default: 0x76).
    */
-  explicit BME280Sensor(I2CBusManager& bus_manager, uint16_t address = 0x76);
+  explicit BME280Driver(I2CBusManager& bus_manager, uint16_t address = 0x76);
 
   /**
-   * @brief Copying or moving a sensor instance is not allowed.
+   * @brief Copying or moving a driver instance is not allowed.
    */
-  BME280Sensor(const BME280Sensor&) = delete;
-  BME280Sensor& operator=(const BME280Sensor&) = delete;
-  BME280Sensor(BME280Sensor&&) = delete;
-  BME280Sensor& operator=(BME280Sensor&&) = delete;
+  BME280Driver(const BME280Driver&) = delete;
+  BME280Driver& operator=(const BME280Driver&) = delete;
+  BME280Driver(BME280Driver&&) = delete;
+  BME280Driver& operator=(BME280Driver&&) = delete;
 
   /**
-   * @brief Initialize the sensor.
+   * @brief Initialize the driver.
    *
    * @param cb Optional callback called when initialization is complete.
    */
   void Init(Callback cb = nullptr);
 
   /**
-   * @brief Update the sensor configuration.
+   * @brief Update the driver configuration.
    *
    * @param config The new configuration settings.
    * @param cb Optional callback called when configuration is applied.
@@ -140,7 +140,7 @@ public:
   void Configure(const Configuration& config, Callback cb = nullptr);
 
   /**
-   * @brief Read all sensor values (temperature, pressure, humidity).
+   * @brief Read all driver values (temperature, pressure, humidity).
    *
    * @param cb Optional callback called when reading is complete.
    */

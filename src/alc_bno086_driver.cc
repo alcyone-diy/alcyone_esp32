@@ -1,11 +1,11 @@
-#include "alc_bno086_sensor.h"
+#include "alc_bno086_driver.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
 #include <cmath>
 
-static const char* TAG = "ALC_BNO086Sensor";
+static const char* TAG = "ALC_BNO086Driver";
 
 // SH-2 Report IDs
 #define SHTP_REPORT_COMMAND_RESPONSE                  0xF1
@@ -18,21 +18,21 @@ static const char* TAG = "ALC_BNO086Sensor";
 #define SH2_COMMAND_ME_CALIBRATION                    0x07
 #define SH2_COMMAND_SAVE_DCD                          0x06
 
-// Sensor Report IDs
-#define SENSOR_REPORTID_ACCELEROMETER                 0x01
-#define SENSOR_REPORTID_GYROSCOPE                     0x02
-#define SENSOR_REPORTID_MAGNETIC_FIELD                0x03
-#define SENSOR_REPORTID_LINEAR_ACCELERATION           0x04
-#define SENSOR_REPORTID_ROTATION_VECTOR               0x05
-#define SENSOR_REPORTID_GRAVITY                       0x06
-#define SENSOR_REPORTID_UNCALIBRATED_GYROSCOPE        0x07
-#define SENSOR_REPORTID_GAME_ROTATION_VECTOR          0x08
-#define SENSOR_REPORTID_UNCALIBRATED_MAGNETIC_FIELD   0x09
-#define SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR      0x0A
-#define SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR 0x0B
-#define SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR      0x1E
-#define SENSOR_REPORTID_STEP_COUNTER                  0x14
-#define SENSOR_REPORTID_STABILITY_CLASSIFIER          0x15
+// Driver Report IDs
+#define DRIVER_REPORTID_ACCELEROMETER                 0x01
+#define DRIVER_REPORTID_GYROSCOPE                     0x02
+#define DRIVER_REPORTID_MAGNETIC_FIELD                0x03
+#define DRIVER_REPORTID_LINEAR_ACCELERATION           0x04
+#define DRIVER_REPORTID_ROTATION_VECTOR               0x05
+#define DRIVER_REPORTID_GRAVITY                       0x06
+#define DRIVER_REPORTID_UNCALIBRATED_GYROSCOPE        0x07
+#define DRIVER_REPORTID_GAME_ROTATION_VECTOR          0x08
+#define DRIVER_REPORTID_UNCALIBRATED_MAGNETIC_FIELD   0x09
+#define DRIVER_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR      0x0A
+#define DRIVER_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR 0x0B
+#define DRIVER_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR      0x1E
+#define DRIVER_REPORTID_STEP_COUNTER                  0x14
+#define DRIVER_REPORTID_STABILITY_CLASSIFIER          0x15
 
 // SH-2 Channels
 #define CHANNEL_COMMAND                               0
@@ -44,24 +44,24 @@ static const char* TAG = "ALC_BNO086Sensor";
 
 namespace ALC {
 
-BNO086Sensor::BNO086Sensor(I2CBusManager& bus_manager, uint16_t address)
+BNO086Driver::BNO086Driver(I2CBusManager& bus_manager, uint16_t address)
   : bus_manager_(bus_manager), address_(address) {
   memset(sequence_number_, 0, sizeof(sequence_number_));
 }
 
-void BNO086Sensor::Init(Callback cb) {
+void BNO086Driver::Init(Callback cb) {
   SoftReset([this, cb](esp_err_t err) {
     if (err != ESP_OK) {
       if (cb) cb(err);
       return;
     }
-    // The sensor sends an advertisement packet after reset.
-    // We poll for it to ensure the sensor is ready.
+    // The driver sends an advertisement packet after reset.
+    // We poll for it to ensure the driver is ready.
     PollForAdvertisement(100, cb);
   });
 }
 
-void BNO086Sensor::PollForAdvertisement(int attempts_left, Callback cb) {
+void BNO086Driver::PollForAdvertisement(int attempts_left, Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     return ReceivePacket(token, 10);
   }, [this, attempts_left, cb](esp_err_t err) {
@@ -77,7 +77,7 @@ void BNO086Sensor::PollForAdvertisement(int attempts_left, Callback cb) {
   }, pdMS_TO_TICKS(10));
 }
 
-void BNO086Sensor::SoftReset(Callback cb) {
+void BNO086Driver::SoftReset(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     memset(buffer_, 0, sizeof(buffer_));
     buffer_[4] = 1; // Reset command in executable channel
@@ -97,7 +97,7 @@ void BNO086Sensor::SoftReset(Callback cb) {
   });
 }
 
-void BNO086Sensor::Update(Callback cb) {
+void BNO086Driver::Update(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     int max_packets = 10;
     while (max_packets-- > 0) {
@@ -113,7 +113,7 @@ void BNO086Sensor::Update(Callback cb) {
   }, cb);
 }
 
-esp_err_t BNO086Sensor::SendPacket(BusToken& token, uint8_t channel, uint16_t len) {
+esp_err_t BNO086Driver::SendPacket(BusToken& token, uint8_t channel, uint16_t len) {
   uint16_t total_len = len + 4;
   buffer_[0] = total_len & 0xFF;
   buffer_[1] = (total_len >> 8) & 0xFF;
@@ -123,7 +123,7 @@ esp_err_t BNO086Sensor::SendPacket(BusToken& token, uint8_t channel, uint16_t le
   return bus_manager_.Write(token, address_, buffer_, total_len);
 }
 
-esp_err_t BNO086Sensor::ReceivePacket(BusToken& token, uint16_t timeout_ms) {
+esp_err_t BNO086Driver::ReceivePacket(BusToken& token, uint16_t timeout_ms) {
   // To avoid the BNO08x discarding packets upon an I2C STOP condition between
   // header and payload reads, we perform a single transaction reading the
   // maximum possible packet size we can handle.
@@ -142,7 +142,7 @@ esp_err_t BNO086Sensor::ReceivePacket(BusToken& token, uint16_t timeout_ms) {
   return ESP_OK;
 }
 
-void BNO086Sensor::ParsePacket() {
+void BNO086Driver::ParsePacket() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   uint8_t channel = buffer_[2];
   uint16_t length = (buffer_[1] << 8) | buffer_[0];
@@ -163,7 +163,7 @@ static float qToFloat(int16_t fixed_point, int8_t q_point) {
   return ldexpf((float)fixed_point, -q_point);
 }
 
-void BNO086Sensor::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
+void BNO086Driver::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   if (len < 15) return;
   int16_t raw_av_x = (payload[2] << 8) | payload[1];
   int16_t raw_av_y = (payload[4] << 8) | payload[3];
@@ -183,7 +183,7 @@ void BNO086Sensor::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   gyro_integrated_rv_.accuracy = 0;
 }
 
-void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
+void BNO086Driver::ParseSH2Report(uint8_t* payload, uint16_t len) {
   if (len < 1) return;
 
   uint16_t curr = 0;
@@ -196,7 +196,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
     if (curr + 1 >= len) break;
 
     switch (report_id) {
-      case SENSOR_REPORTID_ACCELEROMETER: {
+      case DRIVER_REPORTID_ACCELEROMETER: {
         if (curr + 9 >= len) return;
         int16_t raw_x = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_y = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -208,7 +208,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 10;
         break;
       }
-      case SENSOR_REPORTID_GYROSCOPE: {
+      case DRIVER_REPORTID_GYROSCOPE: {
         if (curr + 9 >= len) return;
         int16_t raw_x = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_y = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -220,7 +220,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 10;
         break;
       }
-      case SENSOR_REPORTID_MAGNETIC_FIELD: {
+      case DRIVER_REPORTID_MAGNETIC_FIELD: {
         if (curr + 9 >= len) return;
         int16_t raw_x = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_y = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -232,7 +232,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 10;
         break;
       }
-      case SENSOR_REPORTID_LINEAR_ACCELERATION: {
+      case DRIVER_REPORTID_LINEAR_ACCELERATION: {
         if (curr + 9 >= len) return;
         int16_t raw_x = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_y = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -244,7 +244,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 10;
         break;
       }
-      case SENSOR_REPORTID_GRAVITY: {
+      case DRIVER_REPORTID_GRAVITY: {
         if (curr + 9 >= len) return;
         int16_t raw_x = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_y = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -256,10 +256,10 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 10;
         break;
       }
-      case SENSOR_REPORTID_ROTATION_VECTOR:
-      case SENSOR_REPORTID_GAME_ROTATION_VECTOR:
-      case SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR:
-      case SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR: {
+      case DRIVER_REPORTID_ROTATION_VECTOR:
+      case DRIVER_REPORTID_GAME_ROTATION_VECTOR:
+      case DRIVER_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR:
+      case DRIVER_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR: {
         if (curr + 11 >= len) return;
         int16_t raw_i = (payload[curr + 5] << 8) | payload[curr + 4];
         int16_t raw_j = (payload[curr + 7] << 8) | payload[curr + 6];
@@ -273,8 +273,8 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         q.real = qToFloat(raw_real, 14);
 
         uint8_t size = 12;
-        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR ||
-            report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
+        if (report_id == DRIVER_REPORTID_ROTATION_VECTOR ||
+            report_id == DRIVER_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
           if (curr + 13 >= len) return;
           int16_t raw_acc = (payload[curr + 13] << 8) | payload[curr + 12];
           q.accuracy = qToFloat(raw_acc, 12);
@@ -283,20 +283,20 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
           q.accuracy = 0;
         }
 
-        if (report_id == SENSOR_REPORTID_ROTATION_VECTOR) {
+        if (report_id == DRIVER_REPORTID_ROTATION_VECTOR) {
           rotation_vector_ = q;
-        } else if (report_id == SENSOR_REPORTID_GAME_ROTATION_VECTOR) {
+        } else if (report_id == DRIVER_REPORTID_GAME_ROTATION_VECTOR) {
           game_rotation_vector_ = q;
-        } else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
+        } else if (report_id == DRIVER_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR) {
           arvr_rotation_vector_ = q;
-        } else if (report_id == SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR) {
+        } else if (report_id == DRIVER_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR) {
           arvr_game_rotation_vector_ = q;
         }
 
         curr += size;
         break;
       }
-      case SENSOR_REPORTID_STEP_COUNTER: {
+      case DRIVER_REPORTID_STEP_COUNTER: {
         if (curr + 11 >= len) return;
         step_counter_.count = (payload[curr + 9] << 8) | payload[curr + 8];
         step_counter_.latency = (payload[curr + 7] << 24) | (payload[curr + 6] << 16) |
@@ -304,7 +304,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         curr += 12;
         break;
       }
-      case SENSOR_REPORTID_STABILITY_CLASSIFIER: {
+      case DRIVER_REPORTID_STABILITY_CLASSIFIER: {
         if (curr + 4 >= len) return;
         stability_ = static_cast<Stability>(payload[curr + 4]);
         curr += 6;
@@ -317,7 +317,7 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
   }
 }
 
-void BNO086Sensor::SetFeature(uint8_t report_id, uint32_t period_us, Callback cb) {
+void BNO086Driver::SetFeature(uint8_t report_id, uint32_t period_us, Callback cb) {
   bus_manager_.Enqueue([this, report_id, period_us](BusToken& token) {
     uint8_t cmd_payload[21];
     memset(cmd_payload, 0, 21);
@@ -333,44 +333,44 @@ void BNO086Sensor::SetFeature(uint8_t report_id, uint32_t period_us, Callback cb
   }, cb);
 }
 
-void BNO086Sensor::EnableAccelerometer(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_ACCELEROMETER, period_us, cb);
+void BNO086Driver::EnableAccelerometer(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_ACCELEROMETER, period_us, cb);
 }
-void BNO086Sensor::EnableGyroscope(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_GYROSCOPE, period_us, cb);
+void BNO086Driver::EnableGyroscope(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_GYROSCOPE, period_us, cb);
 }
-void BNO086Sensor::EnableMagnetometer(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_MAGNETIC_FIELD, period_us, cb);
+void BNO086Driver::EnableMagnetometer(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_MAGNETIC_FIELD, period_us, cb);
 }
-void BNO086Sensor::EnableLinearAcceleration(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_LINEAR_ACCELERATION, period_us, cb);
+void BNO086Driver::EnableLinearAcceleration(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_LINEAR_ACCELERATION, period_us, cb);
 }
-void BNO086Sensor::EnableGravity(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_GRAVITY, period_us, cb);
+void BNO086Driver::EnableGravity(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_GRAVITY, period_us, cb);
 }
-void BNO086Sensor::EnableRotationVector(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_ROTATION_VECTOR, period_us, cb);
+void BNO086Driver::EnableRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_ROTATION_VECTOR, period_us, cb);
 }
-void BNO086Sensor::EnableGameRotationVector(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_GAME_ROTATION_VECTOR, period_us, cb);
+void BNO086Driver::EnableGameRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_GAME_ROTATION_VECTOR, period_us, cb);
 }
-void BNO086Sensor::EnableARVRStabilizedRotationVector(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us, cb);
+void BNO086Driver::EnableARVRStabilizedRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us, cb);
 }
-void BNO086Sensor::EnableARVRStabilizedGameRotationVector(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us, cb);
+void BNO086Driver::EnableARVRStabilizedGameRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us, cb);
 }
-void BNO086Sensor::EnableStepCounter(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_STEP_COUNTER, period_us, cb);
+void BNO086Driver::EnableStepCounter(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_STEP_COUNTER, period_us, cb);
 }
-void BNO086Sensor::EnableStabilityClassifier(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_STABILITY_CLASSIFIER, period_us, cb);
+void BNO086Driver::EnableStabilityClassifier(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_STABILITY_CLASSIFIER, period_us, cb);
 }
-void BNO086Sensor::EnableGyroIntegratedRotationVector(uint32_t period_us, Callback cb) {
-  SetFeature(SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us, cb);
+void BNO086Driver::EnableGyroIntegratedRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(DRIVER_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us, cb);
 }
 
-void BNO086Sensor::SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb) {
+void BNO086Driver::SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb) {
   bus_manager_.Enqueue([this, accel, gyro, mag](BusToken& token) {
     uint8_t cmd_payload[12];
     memset(cmd_payload, 0, 12);
@@ -387,7 +387,7 @@ void BNO086Sensor::SetCalibrationConfig(bool accel, bool gyro, bool mag, Callbac
   }, cb);
 }
 
-void BNO086Sensor::SaveCalibration(Callback cb) {
+void BNO086Driver::SaveCalibration(Callback cb) {
   bus_manager_.Enqueue([this](BusToken& token) {
     uint8_t cmd_payload[3];
     cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
@@ -399,7 +399,7 @@ void BNO086Sensor::SaveCalibration(Callback cb) {
   }, cb);
 }
 
-void BNO086Sensor::SetPowerMode(bool sleep, Callback cb) {
+void BNO086Driver::SetPowerMode(bool sleep, Callback cb) {
   bus_manager_.Enqueue([this, sleep](BusToken& token) {
     uint8_t cmd_payload[4];
     cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
@@ -413,55 +413,55 @@ void BNO086Sensor::SetPowerMode(bool sleep, Callback cb) {
 }
 
 // Getters
-BNO086Sensor::Vector3 BNO086Sensor::GetAccelerometer() const {
+BNO086Driver::Vector3 BNO086Driver::GetAccelerometer() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return accel_;
 }
-BNO086Sensor::Vector3 BNO086Sensor::GetGyroscope() const {
+BNO086Driver::Vector3 BNO086Driver::GetGyroscope() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return gyro_;
 }
-BNO086Sensor::Vector3 BNO086Sensor::GetMagnetometer() const {
+BNO086Driver::Vector3 BNO086Driver::GetMagnetometer() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return mag_;
 }
-BNO086Sensor::Vector3 BNO086Sensor::GetLinearAcceleration() const {
+BNO086Driver::Vector3 BNO086Driver::GetLinearAcceleration() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return linear_accel_;
 }
-BNO086Sensor::Vector3 BNO086Sensor::GetGravity() const {
+BNO086Driver::Vector3 BNO086Driver::GetGravity() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return gravity_;
 }
-BNO086Sensor::Quaternion BNO086Sensor::GetRotationVector() const {
+BNO086Driver::Quaternion BNO086Driver::GetRotationVector() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return rotation_vector_;
 }
-BNO086Sensor::Quaternion BNO086Sensor::GetGameRotationVector() const {
+BNO086Driver::Quaternion BNO086Driver::GetGameRotationVector() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return game_rotation_vector_;
 }
-BNO086Sensor::Quaternion BNO086Sensor::GetARVRStabilizedRotationVector() const {
+BNO086Driver::Quaternion BNO086Driver::GetARVRStabilizedRotationVector() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return arvr_rotation_vector_;
 }
-BNO086Sensor::Quaternion BNO086Sensor::GetARVRStabilizedGameRotationVector() const {
+BNO086Driver::Quaternion BNO086Driver::GetARVRStabilizedGameRotationVector() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return arvr_game_rotation_vector_;
 }
-BNO086Sensor::Quaternion BNO086Sensor::GetGyroIntegratedRotationVector() const {
+BNO086Driver::Quaternion BNO086Driver::GetGyroIntegratedRotationVector() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return gyro_integrated_rv_;
 }
-BNO086Sensor::Vector3 BNO086Sensor::GetGyroIntegratedAngularVelocity() const {
+BNO086Driver::Vector3 BNO086Driver::GetGyroIntegratedAngularVelocity() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return gyro_integrated_av_;
 }
-uint16_t BNO086Sensor::GetStepCount() const {
+uint16_t BNO086Driver::GetStepCount() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return step_counter_.count;
 }
-BNO086Sensor::Stability BNO086Sensor::GetStability() const {
+BNO086Driver::Stability BNO086Driver::GetStability() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   return stability_;
 }
