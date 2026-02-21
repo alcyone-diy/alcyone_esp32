@@ -29,8 +29,7 @@ public:
     explicit BusToken(I2CBusManager* mgr) : manager_(mgr) {}
 
     I2CBusManager* manager_{nullptr};
-    bool active_{false};
-    bool used_{false};
+    bool valid_{false};
 
   public:
     BusToken(const BusToken&) = delete;
