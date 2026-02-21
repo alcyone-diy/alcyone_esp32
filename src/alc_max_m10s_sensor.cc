@@ -371,6 +371,10 @@ esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint32
   return SendUBX(token, 0x06, 0x8A, payload, 12);
 }
 
+esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, bool value) {
+  return SetConfigInternal(token, key, (uint8_t)(value ? 1 : 0));
+}
+
 void MaxM10sSensor::ResetParser() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   parse_state_ = ParseState::SYNC1;
