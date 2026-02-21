@@ -34,7 +34,7 @@ void PrintMemory();
  *
  * The storage instance must be opened before calling this method.
  *
- * @param storage Storage instance.
+ * @param storage An opened Storage instance.
  * @param credential Credential to add or update.
  * @return esp_err_t ESP_OK on success, or an error code.
  */
@@ -45,7 +45,7 @@ esp_err_t AddWifiCredential(Storage& storage, const WifiController::Credential& 
  *
  * The storage instance must be opened before calling this method.
  *
- * @param storage Storage instance.
+ * @param storage An opened Storage instance.
  * @param ssid SSID of the credential to remove.
  * @return esp_err_t ESP_OK if removed, ESP_ERR_NOT_FOUND if not found, or an error code.
  */
@@ -56,7 +56,7 @@ esp_err_t RemoveWifiCredential(Storage& storage, const char* ssid);
  *
  * The storage instance must be opened before calling this method.
  *
- * @param storage Storage instance.
+ * @param storage An opened Storage instance.
  * @param wifi_controller WifiController instance.
  * @return esp_err_t ESP_OK on success, or an error code.
  */
