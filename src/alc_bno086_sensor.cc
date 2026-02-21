@@ -7,113 +7,127 @@
 
 static const char* TAG = "BNO086Sensor";
 
+// SH-2 Report IDs
+#define SHTP_REPORT_COMMAND_RESPONSE                  0xF1
+#define SHTP_REPORT_COMMAND_REQUEST                   0xF2
+#define SHTP_REPORT_SET_FEATURE_COMMAND               0xFD
+#define SHTP_REPORT_GET_FEATURE_RESPONSE              0xFC
+
+// SH-2 Commands
+#define SH2_COMMAND_SET_POWER_STATE                   0x01
+#define SH2_COMMAND_ME_CALIBRATION                    0x07
+#define SH2_COMMAND_SAVE_DCD                          0x06
+
+// Sensor Report IDs
+#define SENSOR_REPORTID_ACCELEROMETER                 0x01
+#define SENSOR_REPORTID_GYROSCOPE                     0x02
+#define SENSOR_REPORTID_MAGNETIC_FIELD                0x03
+#define SENSOR_REPORTID_LINEAR_ACCELERATION           0x04
+#define SENSOR_REPORTID_ROTATION_VECTOR               0x05
+#define SENSOR_REPORTID_GRAVITY                       0x06
+#define SENSOR_REPORTID_UNCALIBRATED_GYROSCOPE        0x07
+#define SENSOR_REPORTID_GAME_ROTATION_VECTOR          0x08
+#define SENSOR_REPORTID_UNCALIBRATED_MAGNETIC_FIELD   0x09
+#define SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR      0x0A
+#define SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR 0x0B
+#define SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR      0x1E
+#define SENSOR_REPORTID_STEP_COUNTER                  0x14
+#define SENSOR_REPORTID_STABILITY_CLASSIFIER          0x15
+
+// SH-2 Channels
+#define CHANNEL_COMMAND                               0
+#define CHANNEL_EXECUTABLE                            1
+#define CHANNEL_CONTROL                               2
+#define CHANNEL_REPORTS                               3
+#define CHANNEL_WAKE_REPORTS                          4
+#define CHANNEL_GYRO_INTEGRATED                       5
+
 namespace ALC {
 
-BNO086Sensor::BNO086Sensor(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
-  : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
+BNO086Sensor::BNO086Sensor(I2CBusManager& bus_manager, uint8_t address)
+  : bus_manager_(bus_manager), address_(address) {
   memset(sequence_number_, 0, sizeof(sequence_number_));
 }
 
-BNO086Sensor::~BNO086Sensor() {
-  Close();
-}
-
-esp_err_t BNO086Sensor::Open() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  ESP_LOGI(TAG, "Opening BNO086Sensor at address 0x%02X", address_);
-
-  // Perform soft reset to ensure clean state
-  esp_err_t err = SoftReset();
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Soft reset failed: %s", esp_err_to_name(err));
-    return err;
-  }
-
-  // The sensor sends an advertisement packet after reset.
-  // We poll for it to ensure the sensor is ready.
-  bool ready = false;
-  for (int i = 0; i < 100; ++i) {
-    if (ReceivePacket(10) == ESP_OK) {
-      ParsePacket();
-      ready = true;
-      break;
+void BNO086Sensor::Init(Callback cb) {
+  SoftReset([this, cb](esp_err_t err) {
+    if (err != ESP_OK) {
+      if (cb) cb(err);
+      return;
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-
-  if (!ready) {
-    ESP_LOGW(TAG, "Did not receive advertisement packet, but continuing...");
-  }
-
-  return ESP_OK;
+    // The sensor sends an advertisement packet after reset.
+    // We poll for it to ensure the sensor is ready.
+    PollForAdvertisement(100, cb);
+  });
 }
 
-esp_err_t BNO086Sensor::Close() {
-  return ESP_OK;
-}
-
-esp_err_t BNO086Sensor::SoftReset() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  memset(buffer_, 0, sizeof(buffer_));
-  buffer_[4] = 1; // Reset command in executable channel
-  esp_err_t err = SendPacket(CHANNEL_EXECUTABLE, 1);
-  if (err != ESP_OK) return err;
-
-  vTaskDelay(pdMS_TO_TICKS(200)); // Wait for reset to complete
-  memset(sequence_number_, 0, sizeof(sequence_number_));
-  sh2_sequence_number_ = 0;
-  return ESP_OK;
-}
-
-esp_err_t BNO086Sensor::Update() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  int max_packets = 10;
-  while (max_packets-- > 0) {
-    // Use a small but non-zero timeout for polling
-    esp_err_t err = ReceivePacket(2);
+void BNO086Sensor::PollForAdvertisement(int attempts_left, Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    return ReceivePacket(token, 10);
+  }, [this, attempts_left, cb](esp_err_t err) {
     if (err == ESP_OK) {
       ParsePacket();
+      if (cb) cb(ESP_OK);
+    } else if (attempts_left > 0) {
+      PollForAdvertisement(attempts_left - 1, cb);
     } else {
-      break; // No more packets or error
+      ESP_LOGW(TAG, "Did not receive advertisement packet, but continuing...");
+      if (cb) cb(ESP_OK);
     }
-  }
-  return ESP_OK;
+  }, pdMS_TO_TICKS(10));
 }
 
-esp_err_t BNO086Sensor::SendPacket(uint8_t channel, uint16_t len) {
+void BNO086Sensor::SoftReset(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    memset(buffer_, 0, sizeof(buffer_));
+    buffer_[4] = 1; // Reset command in executable channel
+    return SendPacket(token, CHANNEL_EXECUTABLE, 1);
+  }, [this, cb](esp_err_t err) {
+    if (err != ESP_OK) {
+      if (cb) cb(err);
+      return;
+    }
+    // Wait for reset to complete
+    bus_manager_.Enqueue([this](BusToken& token) {
+      std::lock_guard<std::recursive_mutex> lock(mutex_);
+      memset(sequence_number_, 0, sizeof(sequence_number_));
+      sh2_sequence_number_ = 0;
+      return ESP_OK;
+    }, cb, pdMS_TO_TICKS(200));
+  });
+}
+
+void BNO086Sensor::Update(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    int max_packets = 10;
+    while (max_packets-- > 0) {
+      // Use a small but non-zero timeout for polling
+      esp_err_t err = ReceivePacket(token, 2);
+      if (err == ESP_OK) {
+        ParsePacket();
+      } else {
+        break; // No more packets or error
+      }
+    }
+    return ESP_OK;
+  }, cb);
+}
+
+esp_err_t BNO086Sensor::SendPacket(BusToken& token, uint8_t channel, uint16_t len) {
   uint16_t total_len = len + 4;
   buffer_[0] = total_len & 0xFF;
   buffer_[1] = (total_len >> 8) & 0xFF;
   buffer_[2] = channel;
   buffer_[3] = sequence_number_[channel]++;
 
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write(cmd, buffer_, total_len, true);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
-
-  return err;
+  return bus_manager_.Write(token, address_, buffer_, total_len);
 }
 
-esp_err_t BNO086Sensor::ReceivePacket(uint16_t timeout_ms) {
+esp_err_t BNO086Sensor::ReceivePacket(BusToken& token, uint16_t timeout_ms) {
   // To avoid the BNO08x discarding packets upon an I2C STOP condition between
   // header and payload reads, we perform a single transaction reading the
   // maximum possible packet size we can handle.
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-  // We read 256 bytes. The sensor will NACK when it has no more data to send.
-  i2c_master_read(cmd, buffer_, sizeof(buffer_), I2C_MASTER_LAST_NACK);
-  i2c_master_stop(cmd);
-
-  // Note: This transaction might return ESP_FAIL if the sensor NACKs before
-  // 256 bytes are read. However, the data already read into the buffer
-  // should be valid.
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(timeout_ms > 0 ? timeout_ms : i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
+  esp_err_t err = bus_manager_.Read(token, address_, buffer_, sizeof(buffer_), timeout_ms);
 
   // Even if err != ESP_OK, we check if we have a valid-looking header.
   uint16_t length = (buffer_[1] << 8) | buffer_[0];
@@ -129,6 +143,7 @@ esp_err_t BNO086Sensor::ReceivePacket(uint16_t timeout_ms) {
 }
 
 void BNO086Sensor::ParsePacket() {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   uint8_t channel = buffer_[2];
   uint16_t length = (buffer_[1] << 8) | buffer_[0];
   length &= 0x7FFF;
@@ -141,8 +156,6 @@ void BNO086Sensor::ParsePacket() {
     ParseSH2Report(payload, payload_len);
   } else if (channel == CHANNEL_GYRO_INTEGRATED) {
     ParseGyroIntegratedReport(payload, payload_len);
-  } else if (channel == CHANNEL_CONTROL) {
-    // Command responses could be handled here
   }
 }
 
@@ -152,9 +165,6 @@ static float qToFloat(int16_t fixed_point, int8_t q_point) {
 
 void BNO086Sensor::ParseGyroIntegratedReport(uint8_t* payload, uint16_t len) {
   if (len < 15) return;
-  // payload[0] is sequence
-  // payload[1..6] is angular velocity (Q10)
-  // payload[7..14] is quaternion (Q14)
   int16_t raw_av_x = (payload[2] << 8) | payload[1];
   int16_t raw_av_y = (payload[4] << 8) | payload[3];
   int16_t raw_av_z = (payload[6] << 8) | payload[5];
@@ -177,7 +187,6 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
   if (len < 1) return;
 
   uint16_t curr = 0;
-  // Check if it's a timestamp base report
   if (payload[curr] == 0xFB) {
     curr += 5; // ID + 4 bytes timestamp
   }
@@ -284,7 +293,6 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
       case SENSOR_REPORTID_STEP_COUNTER: {
         if (curr + 11 >= len) return;
         step_counter_.count = (payload[curr + 9] << 8) | payload[curr + 8];
-        // Latency is 4 bytes at [4..7]
         step_counter_.latency = (payload[curr + 7] << 24) | (payload[curr + 6] << 16) | (payload[curr + 5] << 8) | payload[curr + 4];
         curr += 12;
         break;
@@ -296,113 +304,159 @@ void BNO086Sensor::ParseSH2Report(uint8_t* payload, uint16_t len) {
         break;
       }
       default:
-        // Unknown report, skip to end
         curr = len;
         break;
     }
   }
 }
 
-esp_err_t BNO086Sensor::SetFeature(uint8_t report_id, uint32_t period_us) {
-  uint8_t cmd_payload[21];
-  memset(cmd_payload, 0, 21);
-  cmd_payload[0] = SHTP_REPORT_SET_FEATURE_COMMAND;
-  cmd_payload[1] = report_id;
-  cmd_payload[5] = period_us & 0xFF;
-  cmd_payload[6] = (period_us >> 8) & 0xFF;
-  cmd_payload[7] = (period_us >> 16) & 0xFF;
-  cmd_payload[8] = (period_us >> 24) & 0xFF;
+void BNO086Sensor::SetFeature(uint8_t report_id, uint32_t period_us, Callback cb) {
+  bus_manager_.Enqueue([this, report_id, period_us](BusToken& token) {
+    uint8_t cmd_payload[21];
+    memset(cmd_payload, 0, 21);
+    cmd_payload[0] = SHTP_REPORT_SET_FEATURE_COMMAND;
+    cmd_payload[1] = report_id;
+    cmd_payload[5] = period_us & 0xFF;
+    cmd_payload[6] = (period_us >> 8) & 0xFF;
+    cmd_payload[7] = (period_us >> 16) & 0xFF;
+    cmd_payload[8] = (period_us >> 24) & 0xFF;
 
-  memcpy(buffer_ + 4, cmd_payload, 21);
-  return SendPacket(CHANNEL_CONTROL, 21);
-}
-
-esp_err_t BNO086Sensor::EnableAccelerometer(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_ACCELEROMETER, period_us);
-}
-esp_err_t BNO086Sensor::EnableGyroscope(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_GYROSCOPE, period_us);
-}
-esp_err_t BNO086Sensor::EnableMagnetometer(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_MAGNETIC_FIELD, period_us);
-}
-esp_err_t BNO086Sensor::EnableLinearAcceleration(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_LINEAR_ACCELERATION, period_us);
-}
-esp_err_t BNO086Sensor::EnableGravity(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_GRAVITY, period_us);
-}
-esp_err_t BNO086Sensor::EnableRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_ROTATION_VECTOR, period_us);
-}
-esp_err_t BNO086Sensor::EnableGameRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_GAME_ROTATION_VECTOR, period_us);
-}
-esp_err_t BNO086Sensor::EnableARVRStabilizedRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us);
-}
-esp_err_t BNO086Sensor::EnableARVRStabilizedGameRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us);
-}
-esp_err_t BNO086Sensor::EnableStepCounter(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_STEP_COUNTER, period_us);
-}
-esp_err_t BNO086Sensor::EnableStabilityClassifier(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_STABILITY_CLASSIFIER, period_us);
-}
-esp_err_t BNO086Sensor::EnableGyroIntegratedRotationVector(uint32_t period_us) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return SetFeature(SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us);
+    memcpy(buffer_ + 4, cmd_payload, 21);
+    return SendPacket(token, CHANNEL_CONTROL, 21);
+  }, cb);
 }
 
-esp_err_t BNO086Sensor::SetCalibrationConfig(bool accel, bool gyro, bool mag) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[12];
-  memset(cmd_payload, 0, 12);
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = 0x07; // ME Calibration
-  cmd_payload[3] = accel ? 1 : 0;
-  cmd_payload[4] = gyro ? 1 : 0;
-  cmd_payload[5] = mag ? 1 : 0;
-  cmd_payload[6] = 0x00; // Planar
-
-  memcpy(buffer_ + 4, cmd_payload, 12);
-  return SendPacket(CHANNEL_CONTROL, 12);
+void BNO086Sensor::EnableAccelerometer(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_ACCELEROMETER, period_us, cb);
+}
+void BNO086Sensor::EnableGyroscope(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_GYROSCOPE, period_us, cb);
+}
+void BNO086Sensor::EnableMagnetometer(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_MAGNETIC_FIELD, period_us, cb);
+}
+void BNO086Sensor::EnableLinearAcceleration(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_LINEAR_ACCELERATION, period_us, cb);
+}
+void BNO086Sensor::EnableGravity(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_GRAVITY, period_us, cb);
+}
+void BNO086Sensor::EnableRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_ROTATION_VECTOR, period_us, cb);
+}
+void BNO086Sensor::EnableGameRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_GAME_ROTATION_VECTOR, period_us, cb);
+}
+void BNO086Sensor::EnableARVRStabilizedRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR, period_us, cb);
+}
+void BNO086Sensor::EnableARVRStabilizedGameRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR, period_us, cb);
+}
+void BNO086Sensor::EnableStepCounter(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_STEP_COUNTER, period_us, cb);
+}
+void BNO086Sensor::EnableStabilityClassifier(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_STABILITY_CLASSIFIER, period_us, cb);
+}
+void BNO086Sensor::EnableGyroIntegratedRotationVector(uint32_t period_us, Callback cb) {
+  SetFeature(SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR, period_us, cb);
 }
 
-esp_err_t BNO086Sensor::SaveCalibration() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[3];
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = 0x06; // Save DCD
+void BNO086Sensor::SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb) {
+  bus_manager_.Enqueue([this, accel, gyro, mag](BusToken& token) {
+    uint8_t cmd_payload[12];
+    memset(cmd_payload, 0, 12);
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = SH2_COMMAND_ME_CALIBRATION;
+    cmd_payload[3] = accel ? 1 : 0;
+    cmd_payload[4] = gyro ? 1 : 0;
+    cmd_payload[5] = mag ? 1 : 0;
+    cmd_payload[6] = 0x00; // Planar
 
-  memcpy(buffer_ + 4, cmd_payload, 3);
-  return SendPacket(CHANNEL_CONTROL, 3);
+    memcpy(buffer_ + 4, cmd_payload, 12);
+    return SendPacket(token, CHANNEL_CONTROL, 12);
+  }, cb);
 }
 
-esp_err_t BNO086Sensor::SetPowerMode(bool sleep) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  uint8_t cmd_payload[4];
-  cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
-  cmd_payload[1] = sh2_sequence_number_++;
-  cmd_payload[2] = SH2_COMMAND_SET_POWER_STATE;
-  cmd_payload[3] = sleep ? 1 : 0; // 0 = ON, 1 = SLEEP
+void BNO086Sensor::SaveCalibration(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    uint8_t cmd_payload[3];
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = SH2_COMMAND_SAVE_DCD;
 
-  memcpy(buffer_ + 4, cmd_payload, 4);
-  return SendPacket(CHANNEL_CONTROL, 4);
+    memcpy(buffer_ + 4, cmd_payload, 3);
+    return SendPacket(token, CHANNEL_CONTROL, 3);
+  }, cb);
+}
+
+void BNO086Sensor::SetPowerMode(bool sleep, Callback cb) {
+  bus_manager_.Enqueue([this, sleep](BusToken& token) {
+    uint8_t cmd_payload[4];
+    cmd_payload[0] = SHTP_REPORT_COMMAND_REQUEST;
+    cmd_payload[1] = sh2_sequence_number_++;
+    cmd_payload[2] = SH2_COMMAND_SET_POWER_STATE;
+    cmd_payload[3] = sleep ? 1 : 0; // 0 = ON, 1 = SLEEP
+
+    memcpy(buffer_ + 4, cmd_payload, 4);
+    return SendPacket(token, CHANNEL_CONTROL, 4);
+  }, cb);
+}
+
+// Getters
+BNO086Sensor::Vector3 BNO086Sensor::GetAccelerometer() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return accel_;
+}
+BNO086Sensor::Vector3 BNO086Sensor::GetGyroscope() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return gyro_;
+}
+BNO086Sensor::Vector3 BNO086Sensor::GetMagnetometer() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return mag_;
+}
+BNO086Sensor::Vector3 BNO086Sensor::GetLinearAcceleration() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return linear_accel_;
+}
+BNO086Sensor::Vector3 BNO086Sensor::GetGravity() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return gravity_;
+}
+BNO086Sensor::Quaternion BNO086Sensor::GetRotationVector() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return rotation_vector_;
+}
+BNO086Sensor::Quaternion BNO086Sensor::GetGameRotationVector() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return game_rotation_vector_;
+}
+BNO086Sensor::Quaternion BNO086Sensor::GetARVRStabilizedRotationVector() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return arvr_rotation_vector_;
+}
+BNO086Sensor::Quaternion BNO086Sensor::GetARVRStabilizedGameRotationVector() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return arvr_game_rotation_vector_;
+}
+BNO086Sensor::Quaternion BNO086Sensor::GetGyroIntegratedRotationVector() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return gyro_integrated_rv_;
+}
+BNO086Sensor::Vector3 BNO086Sensor::GetGyroIntegratedAngularVelocity() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return gyro_integrated_av_;
+}
+uint16_t BNO086Sensor::GetStepCount() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return step_counter_.count;
+}
+BNO086Sensor::Stability BNO086Sensor::GetStability() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return stability_;
 }
 
 } // namespace ALC
