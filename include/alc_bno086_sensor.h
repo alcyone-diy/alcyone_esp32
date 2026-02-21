@@ -2,6 +2,7 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
+#include "alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
 
@@ -11,30 +12,20 @@ namespace ALC {
  * @brief BNO086Sensor IMU driver for ESP-IDF.
  *
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
+ * It utilizes the ALC::I2CBusManager for non-blocking, serialized I2C access.
  *
  * ### Usage
- * 1. Instantiate the @ref BNO086Sensor class with the I2C port and address.
- * 2. Call @ref Open() to initialize the sensor and perform a soft reset.
- * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors (e.g., @ref EnableRotationVector()).
- * 4. In a loop, call @ref Update() to poll for new packets from the sensor.
- * 5. Retrieve the latest data using the corresponding `Get...()` methods (e.g., @ref GetRotationVector()).
- *
- * Example:
- * @code
- * ALC::BNO086Sensor imu(I2C_NUM_0);
- * if (imu.Open() == ESP_OK) {
- *     imu.EnableRotationVector(10000); // 10ms period
- *     while (true) {
- *         imu.Update();
- *         auto rv = imu.GetRotationVector();
- *         // Use rv.i, rv.j, rv.k, rv.real
- *         vTaskDelay(pdMS_TO_TICKS(10));
- *     }
- * }
- * @endcode
+ * 1. Instantiate the @ref BNO086Sensor class with a reference to the I2CBusManager.
+ * 2. Call @ref Init() to initialize the sensor and perform a soft reset.
+ * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors.
+ * 4. Call @ref Update() periodically to poll for new packets.
+ * 5. Retrieve the latest data using the corresponding `Get...()` methods.
  */
 class BNO086Sensor {
 public:
+  using Callback = I2CBusManager::Callback;
+  using BusToken = I2CBusManager::BusToken;
+
   /**
    * @brief A 3D vector for sensor data.
    */
@@ -78,180 +69,159 @@ public:
   /**
    * @brief Construct a new BNO086Sensor object.
    *
-   * @param i2c_port I2C port number.
+   * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address (default is 0x4A, can be 0x4B).
-   * @param i2c_timeout_ms I2C transaction timeout in milliseconds (default 100).
    */
-  BNO086Sensor(i2c_port_t i2c_port, uint8_t address = 0x4A, uint32_t i2c_timeout_ms = 100);
-  ~BNO086Sensor();
+  explicit BNO086Sensor(I2CBusManager& bus_manager, uint8_t address = 0x4A);
 
-  // Disable default constructor
+  /**
+   * @brief Default constructor is deleted.
+   */
   BNO086Sensor() = delete;
-  // Disable copy constructor and assignment
+
+  /**
+   * @brief Copying or moving a sensor instance is not allowed.
+   */
   BNO086Sensor(const BNO086Sensor&) = delete;
   BNO086Sensor& operator=(const BNO086Sensor&) = delete;
+  BNO086Sensor(BNO086Sensor&&) = delete;
+  BNO086Sensor& operator=(BNO086Sensor&&) = delete;
 
   /**
    * @brief Initialize the sensor. Performs a soft reset and waits for advertisement.
-   * @return esp_err_t ESP_OK on success.
+   * @param cb Optional callback called when initialization is complete.
    */
-  esp_err_t Open();
-
-  /**
-   * @brief Close the sensor connection.
-   * @return esp_err_t ESP_OK.
-   */
-  esp_err_t Close();
+  void Init(Callback cb = nullptr);
 
   /**
    * @brief Read pending packets from the sensor. Non-blocking.
-   * @return esp_err_t ESP_OK on success.
+   * @param cb Optional callback called when update is complete.
    */
-  esp_err_t Update();
+  void Update(Callback cb = nullptr);
 
   /**
    * @brief Enable Accelerometer reports.
    * @param period_us Reporting period in microseconds.
-   * @return esp_err_t ESP_OK on success.
-   * @note Unit: m/s^2.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableAccelerometer(uint32_t period_us);
+  void EnableAccelerometer(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Gyroscope reports.
    * @param period_us Reporting period in microseconds.
-   * @return esp_err_t ESP_OK on success.
-   * @note Unit: rad/s.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableGyroscope(uint32_t period_us);
+  void EnableGyroscope(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Magnetometer reports.
    * @param period_us Reporting period in microseconds.
-   * @return esp_err_t ESP_OK on success.
-   * @note Unit: uT.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableMagnetometer(uint32_t period_us);
+  void EnableMagnetometer(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Linear Acceleration reports (Acceleration minus Gravity).
    * @param period_us Reporting period in microseconds.
-   * @return esp_err_t ESP_OK on success.
-   * @note Unit: m/s^2.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableLinearAcceleration(uint32_t period_us);
+  void EnableLinearAcceleration(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Gravity reports.
    * @param period_us Reporting period in microseconds.
-   * @return esp_err_t ESP_OK on success.
-   * @note Unit: m/s^2.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableGravity(uint32_t period_us);
+  void EnableGravity(uint32_t period_us, Callback cb = nullptr);
 
   /**
-   * @brief Enable Rotation Vector reports (Fused data including Magnetometer).
+   * @brief Enable Rotation Vector reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableRotationVector(uint32_t period_us);
+  void EnableRotationVector(uint32_t period_us, Callback cb = nullptr);
 
   /**
-   * @brief Enable Game Rotation Vector reports (Fused data, no Magnetometer).
+   * @brief Enable Game Rotation Vector reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableGameRotationVector(uint32_t period_us);
+  void EnableGameRotationVector(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable ARVR Stabilized Rotation Vector reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableARVRStabilizedRotationVector(uint32_t period_us);
+  void EnableARVRStabilizedRotationVector(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable ARVR Stabilized Game Rotation Vector reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableARVRStabilizedGameRotationVector(uint32_t period_us);
+  void EnableARVRStabilizedGameRotationVector(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Gyro Integrated Rotation Vector reports (High-rate 400Hz+).
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableGyroIntegratedRotationVector(uint32_t period_us);
+  void EnableGyroIntegratedRotationVector(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Step Counter reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableStepCounter(uint32_t period_us);
+  void EnableStepCounter(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Enable Stability Classifier reports.
    * @param period_us Reporting period in microseconds.
+   * @param cb Optional callback.
    */
-  esp_err_t EnableStabilityClassifier(uint32_t period_us);
+  void EnableStabilityClassifier(uint32_t period_us, Callback cb = nullptr);
 
   /**
    * @brief Configure dynamic calibration for the Motion Engine (ME).
-   *
-   * Dynamic calibration allows the sensor to continuously update its internal calibration offsets
-   * based on motion patterns.
-   *
-   * @param accel Enable accelerometer calibration (based on periods of stillness and gravity).
-   * @param gyro Enable gyroscope calibration (zero-rate offset when detected as stationary).
-   * @param mag Enable magnetometer calibration (based on rotation through the magnetic field).
-   * @return esp_err_t ESP_OK on success.
-   *
-   * @note It is recommended to enable these during normal operation to improve accuracy.
-   * Use SaveCalibration() to persist the current calibration to the sensor's flash memory.
    */
-  esp_err_t SetCalibrationConfig(bool accel, bool gyro, bool mag);
+  void SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb = nullptr);
 
   /**
    * @brief Command the sensor to save its current calibration to flash.
-   * @return esp_err_t ESP_OK on success.
    */
-  esp_err_t SaveCalibration();
+  void SaveCalibration(Callback cb = nullptr);
 
   /**
    * @brief Perform a soft reset of the sensor.
-   * @return esp_err_t ESP_OK on success.
    */
-  esp_err_t SoftReset();
+  void SoftReset(Callback cb = nullptr);
 
   /**
    * @brief Set the sensor power mode.
-   *
-   * Putting the sensor to sleep reduces power consumption. The sensor will still respond
-   * to commands in sleep mode.
-   *
    * @param sleep True to put the sensor to sleep, false to wake it up (On).
-   * @return esp_err_t ESP_OK on success.
-   *
-   * @note For ESP32 Deep Sleep, it is recommended to put the BNO086 to sleep first if
-   * its power supply is maintained during the host's sleep.
    */
-  esp_err_t SetPowerMode(bool sleep);
+  void SetPowerMode(bool sleep, Callback cb = nullptr);
 
-  // Getters for the latest data
-  Vector3 GetAccelerometer() const { return accel_; }
-  Vector3 GetGyroscope() const { return gyro_; }
-  Vector3 GetMagnetometer() const { return mag_; }
-  Vector3 GetLinearAcceleration() const { return linear_accel_; }
-  Vector3 GetGravity() const { return gravity_; }
-  Quaternion GetRotationVector() const { return rotation_vector_; }
-  Quaternion GetGameRotationVector() const { return game_rotation_vector_; }
-  Quaternion GetARVRStabilizedRotationVector() const { return arvr_rotation_vector_; }
-  Quaternion GetARVRStabilizedGameRotationVector() const { return arvr_game_rotation_vector_; }
-  Quaternion GetGyroIntegratedRotationVector() const { return gyro_integrated_rv_; }
-  Vector3 GetGyroIntegratedAngularVelocity() const { return gyro_integrated_av_; }
-  uint16_t GetStepCount() const { return step_counter_.count; }
-  Stability GetStability() const { return stability_; }
+  // Getters for the latest data (thread-safe)
+  Vector3 GetAccelerometer() const;
+  Vector3 GetGyroscope() const;
+  Vector3 GetMagnetometer() const;
+  Vector3 GetLinearAcceleration() const;
+  Vector3 GetGravity() const;
+  Quaternion GetRotationVector() const;
+  Quaternion GetGameRotationVector() const;
+  Quaternion GetARVRStabilizedRotationVector() const;
+  Quaternion GetARVRStabilizedGameRotationVector() const;
+  Quaternion GetGyroIntegratedRotationVector() const;
+  Vector3 GetGyroIntegratedAngularVelocity() const;
+  uint16_t GetStepCount() const;
+  Stability GetStability() const;
 
 private:
-  i2c_port_t i2c_port_;
+  I2CBusManager& bus_manager_;
   uint8_t address_;
-  uint32_t i2c_timeout_ms_;
   uint8_t sequence_number_[6] = {0}; // SHTP sequence numbers for each channel
   uint8_t sh2_sequence_number_ = 0;   // SH-2 command sequence number
 
@@ -275,44 +245,13 @@ private:
   mutable std::recursive_mutex mutex_;
 
   // SH-2 Protocol helpers
-  esp_err_t SendPacket(uint8_t channel, uint16_t len);
-  esp_err_t ReceivePacket(uint16_t timeout_ms = 0);
+  esp_err_t SendPacket(BusToken& token, uint8_t channel, uint16_t len);
+  esp_err_t ReceivePacket(BusToken& token, uint16_t timeout_ms = 0);
   void ParsePacket();
   void ParseSH2Report(uint8_t* payload, uint16_t len);
   void ParseGyroIntegratedReport(uint8_t* payload, uint16_t len);
-  esp_err_t SetFeature(uint8_t report_id, uint32_t period_us);
-
-  // SH-2 Report IDs
-  static constexpr uint8_t SHTP_REPORT_COMMAND_RESPONSE = 0xF1;
-  static constexpr uint8_t SHTP_REPORT_COMMAND_REQUEST = 0xF2;
-
-  // SH-2 Commands
-  static constexpr uint8_t SH2_COMMAND_SET_POWER_STATE = 0x01;
-  static constexpr uint8_t SHTP_REPORT_SET_FEATURE_COMMAND = 0xFD;
-  static constexpr uint8_t SHTP_REPORT_GET_FEATURE_RESPONSE = 0xFC;
-
-  static constexpr uint8_t SENSOR_REPORTID_ACCELEROMETER = 0x01;
-  static constexpr uint8_t SENSOR_REPORTID_GYROSCOPE = 0x02;
-  static constexpr uint8_t SENSOR_REPORTID_MAGNETIC_FIELD = 0x03;
-  static constexpr uint8_t SENSOR_REPORTID_LINEAR_ACCELERATION = 0x04;
-  static constexpr uint8_t SENSOR_REPORTID_ROTATION_VECTOR = 0x05;
-  static constexpr uint8_t SENSOR_REPORTID_GRAVITY = 0x06;
-  static constexpr uint8_t SENSOR_REPORTID_UNCALIBRATED_GYROSCOPE = 0x07;
-  static constexpr uint8_t SENSOR_REPORTID_GAME_ROTATION_VECTOR = 0x08;
-  static constexpr uint8_t SENSOR_REPORTID_UNCALIBRATED_MAGNETIC_FIELD = 0x09;
-  static constexpr uint8_t SENSOR_REPORTID_ARVR_STABILIZED_ROTATION_VECTOR = 0x0A;
-  static constexpr uint8_t SENSOR_REPORTID_ARVR_STABILIZED_GAME_ROTATION_VECTOR = 0x0B;
-  static constexpr uint8_t SENSOR_REPORTID_GYRO_INTEGRATED_ROTATION_VECTOR = 0x1E;
-  static constexpr uint8_t SENSOR_REPORTID_STEP_COUNTER = 0x14;
-  static constexpr uint8_t SENSOR_REPORTID_STABILITY_CLASSIFIER = 0x15;
-
-  // SH-2 Channels
-  static constexpr uint8_t CHANNEL_COMMAND = 0;
-  static constexpr uint8_t CHANNEL_EXECUTABLE = 1;
-  static constexpr uint8_t CHANNEL_CONTROL = 2;
-  static constexpr uint8_t CHANNEL_REPORTS = 3;
-  static constexpr uint8_t CHANNEL_WAKE_REPORTS = 4;
-  static constexpr uint8_t CHANNEL_GYRO_INTEGRATED = 5;
+  void SetFeature(uint8_t report_id, uint32_t period_us, Callback cb);
+  void PollForAdvertisement(int attempts_left, Callback cb);
 };
 
 } // namespace ALC
