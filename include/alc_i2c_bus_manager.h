@@ -26,7 +26,11 @@ public:
    */
   class BusToken {
     friend class I2CBusManager;
-    BusToken() = default;
+    explicit BusToken(I2CBusManager* mgr) : manager_(mgr) {}
+
+    I2CBusManager* manager_{nullptr};
+    bool active_{false};
+    bool used_{false};
 
   public:
     BusToken(const BusToken&) = delete;
@@ -75,7 +79,8 @@ public:
    * @brief Perform a synchronous I2C write.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken.
+   * as it requires a BusToken. The token must be valid, belong to this
+   * manager, and can only be used for a single I2C operation.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
@@ -91,7 +96,8 @@ public:
    * @brief Perform a synchronous I2C read.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken.
+   * as it requires a BusToken. The token must be valid, belong to this
+   * manager, and can only be used for a single I2C operation.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
@@ -107,7 +113,8 @@ public:
    * @brief Perform a synchronous I2C write followed by a read.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken.
+   * as it requires a BusToken. The token must be valid, belong to this
+   * manager, and can only be used for a single I2C operation.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
