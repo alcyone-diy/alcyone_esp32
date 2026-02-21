@@ -78,8 +78,9 @@ public:
    * @brief Perform a synchronous I2C write.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken. The token must be valid, belong to this
-   * manager, and can only be used for a single I2C operation.
+   * as it requires a BusToken. The token must be valid and belong to this
+   * manager. Multiple operations can be performed with the same token
+   * within a single callback.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
@@ -95,8 +96,9 @@ public:
    * @brief Perform a synchronous I2C read.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken. The token must be valid, belong to this
-   * manager, and can only be used for a single I2C operation.
+   * as it requires a BusToken. The token must be valid and belong to this
+   * manager. Multiple operations can be performed with the same token
+   * within a single callback.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
@@ -112,8 +114,9 @@ public:
    * @brief Perform a synchronous I2C write followed by a read.
    *
    * @note This method can only be called from within an Enqueue operation,
-   * as it requires a BusToken. The token must be valid, belong to this
-   * manager, and can only be used for a single I2C operation.
+   * as it requires a BusToken. The token must be valid and belong to this
+   * manager. Multiple operations can be performed with the same token
+   * within a single callback.
    *
    * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.

@@ -70,7 +70,6 @@ esp_err_t I2CBusManager::Write(BusToken& token, uint8_t address, const uint8_t* 
                                uint32_t timeout_ms) {
   if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
   if (!token.valid_) return ESP_ERR_INVALID_STATE;
-  token.valid_ = false;
   return i2c_master_write_to_device(port_, address, data, len, pdMS_TO_TICKS(timeout_ms));
 }
 
@@ -78,7 +77,6 @@ esp_err_t I2CBusManager::Read(BusToken& token, uint8_t address, uint8_t* buffer,
                               uint32_t timeout_ms) {
   if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
   if (!token.valid_) return ESP_ERR_INVALID_STATE;
-  token.valid_ = false;
   return i2c_master_read_from_device(port_, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
 }
 
@@ -87,7 +85,6 @@ esp_err_t I2CBusManager::WriteRead(BusToken& token, uint8_t address, const uint8
                                    uint32_t timeout_ms) {
   if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
   if (!token.valid_) return ESP_ERR_INVALID_STATE;
-  token.valid_ = false;
   return i2c_master_write_read_device(port_, address, write_data, write_len, read_buffer, read_len,
                                       pdMS_TO_TICKS(timeout_ms));
 }
