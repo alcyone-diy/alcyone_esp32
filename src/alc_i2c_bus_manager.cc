@@ -66,6 +66,39 @@ void I2CBusManager::Enqueue(Operation op, Callback cb, TickType_t delay_ticks) {
   xSemaphoreGive(wake_sem_);
 }
 
+void I2CBusManager::Write(uint8_t address, std::vector<uint8_t> data, Callback cb,
+                          TickType_t delay_ticks, uint32_t timeout_ms) {
+  Enqueue(
+      [address, data = std::move(data), timeout_ms](i2c_port_t port) {
+        return i2c_master_write_to_device(port, address, data.data(), data.size(),
+                                          pdMS_TO_TICKS(timeout_ms));
+      },
+      std::move(cb), delay_ticks);
+}
+
+void I2CBusManager::Read(uint8_t address, uint8_t* buffer, size_t len, Callback cb,
+                         TickType_t delay_ticks, uint32_t timeout_ms) {
+  Enqueue(
+      [address, buffer, len, timeout_ms](i2c_port_t port) {
+        return i2c_master_read_from_device(port, address, buffer, len,
+                                           pdMS_TO_TICKS(timeout_ms));
+      },
+      std::move(cb), delay_ticks);
+}
+
+void I2CBusManager::WriteRead(uint8_t address, std::vector<uint8_t> write_data,
+                              uint8_t* read_buffer, size_t read_len, Callback cb,
+                              TickType_t delay_ticks, uint32_t timeout_ms) {
+  Enqueue(
+      [address, write_data = std::move(write_data), read_buffer, read_len,
+       timeout_ms](i2c_port_t port) {
+        return i2c_master_write_read_device(port, address, write_data.data(),
+                                            write_data.size(), read_buffer,
+                                            read_len, pdMS_TO_TICKS(timeout_ms));
+      },
+      std::move(cb), delay_ticks);
+}
+
 void I2CBusManager::TaskEntry(void* pvParameters) {
   static_cast<I2CBusManager*>(pvParameters)->TaskLoop();
 }
