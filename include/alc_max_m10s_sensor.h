@@ -235,7 +235,8 @@ public:
   void SetConfig(uint32_t key, bool value, Callback cb = nullptr);
 
 private:
-  esp_err_t SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
+  esp_err_t SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID, const uint8_t* payload,
+                    uint16_t len);
   esp_err_t UpdateInternal(BusToken& token);
   esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint8_t value);
   esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint16_t value);

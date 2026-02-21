@@ -4,7 +4,7 @@
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "MaxM10sSensor";
+static const char* TAG = "ALC_MaxM10sSensor";
 
 namespace ALC {
 
@@ -158,7 +158,8 @@ static T readLE(const uint8_t* buf) {
   return val;
 }
 
-void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload,
+                                  uint16_t len) {
   if (msgClass == 0x01) { // NAV
     if (msgID == 0x07 && len >= 92) { // PVT
       pvt_data_.iTOW = readLE<uint32_t>(payload + 0);
@@ -221,7 +222,8 @@ void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t
   }
 }
 
-esp_err_t MaxM10sSensor::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+esp_err_t MaxM10sSensor::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID,
+                                  const uint8_t* payload, uint16_t len) {
   uint16_t total_len = len + 8;
   std::vector<uint8_t> frame(total_len);
   frame[0] = 0xB5;

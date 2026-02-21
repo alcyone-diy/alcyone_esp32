@@ -4,7 +4,7 @@
 #include "freertos/task.h"
 #include <cstring>
 
-static const char* TAG = "BME280Sensor";
+static const char* TAG = "ALC_BME280Sensor";
 
 // BME280 Registers
 #define BME280_REG_ID          0xD0
@@ -76,11 +76,13 @@ esp_err_t BME280Sensor::ApplyConfiguration(BusToken& token) {
   }
 
   // Humidity oversampling
-  esp_err_t err = bus_manager_.WriteRegister(token, address_, BME280_REG_CTRL_HUM, static_cast<uint8_t>(current_config.hum_os));
+  esp_err_t err = bus_manager_.WriteRegister(token, address_, BME280_REG_CTRL_HUM,
+                                             static_cast<uint8_t>(current_config.hum_os));
   if (err != ESP_OK) return err;
 
   // Config: standby time and filter
-  uint8_t config_val = (static_cast<uint8_t>(current_config.standby) << 5) | (static_cast<uint8_t>(current_config.filter) << 2);
+  uint8_t config_val = (static_cast<uint8_t>(current_config.standby) << 5) |
+                       (static_cast<uint8_t>(current_config.filter) << 2);
   err = bus_manager_.WriteRegister(token, address_, BME280_REG_CONFIG, config_val);
   if (err != ESP_OK) return err;
 
@@ -145,7 +147,9 @@ esp_err_t BME280Sensor::ReadAndProcessData(BusToken& token) {
   // Temperature compensation
   int32_t var1, var2;
   var1 = ((((adc_T >> 3) - ((int32_t)calib_.dig_T1 << 1))) * ((int32_t)calib_.dig_T2)) >> 11;
-  var2 = (((((adc_T >> 4) - ((int32_t)calib_.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib_.dig_T1))) >> 12) * ((int32_t)calib_.dig_T3)) >> 14;
+  var2 = (((((adc_T >> 4) - ((int32_t)calib_.dig_T1)) *
+            ((adc_T >> 4) - ((int32_t)calib_.dig_T1))) >> 12) *
+          ((int32_t)calib_.dig_T3)) >> 14;
   t_fine_ = var1 + var2;
   temperature_ = ((t_fine_ * 5 + 128) >> 8) / 100.0f;
 
@@ -169,10 +173,16 @@ esp_err_t BME280Sensor::ReadAndProcessData(BusToken& token) {
   // Humidity compensation
   int32_t v_x1_u32r;
   v_x1_u32r = (t_fine_ - ((int32_t)76800));
-  v_x1_u32r = (((((adc_H << 14) - (((int32_t)calib_.dig_H4) << 20) - (((int32_t)calib_.dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) *
-               (((((((v_x1_u32r * ((int32_t)calib_.dig_H6)) >> 10) * (((v_x1_u32r * ((int32_t)calib_.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
-                 ((int32_t)calib_.dig_H2) + 8192) >> 14));
-  v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)calib_.dig_H1)) >> 4));
+  v_x1_u32r = (((((adc_H << 14) - (((int32_t)calib_.dig_H4) << 20) -
+                  (((int32_t)calib_.dig_H5) * v_x1_u32r)) +
+                 ((int32_t)16384)) >> 15) *
+               (((((((v_x1_u32r * ((int32_t)calib_.dig_H6)) >> 10) *
+                    (((v_x1_u32r * ((int32_t)calib_.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) +
+                  ((int32_t)2097152)) *
+                     ((int32_t)calib_.dig_H2) +
+                 8192) >> 14));
+  v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
+                             ((int32_t)calib_.dig_H1)) >> 4));
   v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
   v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
   humidity_ = (float)(v_x1_u32r >> 12) / 1024.0f;
