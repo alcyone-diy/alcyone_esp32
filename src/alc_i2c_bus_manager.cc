@@ -89,6 +89,22 @@ esp_err_t I2CBusManager::WriteRead(BusToken& token, uint8_t address, const uint8
                                       pdMS_TO_TICKS(timeout_ms));
 }
 
+esp_err_t I2CBusManager::WriteRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t value,
+                                       uint32_t timeout_ms) {
+  uint8_t data[2] = {reg, value};
+  return Write(token, address, data, 2, timeout_ms);
+}
+
+esp_err_t I2CBusManager::ReadRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t* value,
+                                      uint32_t timeout_ms) {
+  return ReadRegisters(token, address, reg, value, 1, timeout_ms);
+}
+
+esp_err_t I2CBusManager::ReadRegisters(BusToken& token, uint8_t address, uint8_t reg, uint8_t* data,
+                                       size_t len, uint32_t timeout_ms) {
+  return WriteRead(token, address, &reg, 1, data, len, timeout_ms);
+}
+
 void I2CBusManager::TaskEntry(void* pvParameters) {
   static_cast<I2CBusManager*>(pvParameters)->TaskLoop();
 }

@@ -154,8 +154,6 @@ public:
 
 private:
   esp_err_t ReadCalibrationData(BusToken& token);
-  esp_err_t WriteRegister(BusToken& token, uint8_t reg, uint8_t value);
-  esp_err_t ReadRegisters(BusToken& token, uint8_t reg, uint8_t* data, size_t len);
   esp_err_t ApplyConfiguration(BusToken& token);
   esp_err_t ReadAndProcessData(BusToken& token);
 

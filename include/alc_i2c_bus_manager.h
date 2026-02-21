@@ -140,6 +140,46 @@ public:
                       size_t write_len, uint8_t* read_buffer, size_t read_len,
                       uint32_t timeout_ms = 100);
 
+  /**
+   * @brief Write a single byte to a register.
+   *
+   * @param token The BusToken provided to the enqueued operation.
+   * @param address I2C device address.
+   * @param reg Register address.
+   * @param value Value to write.
+   * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t WriteRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t value,
+                          uint32_t timeout_ms = 100);
+
+  /**
+   * @brief Read a single byte from a register.
+   *
+   * @param token The BusToken provided to the enqueued operation.
+   * @param address I2C device address.
+   * @param reg Register address.
+   * @param value Pointer to store the read value.
+   * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t ReadRegister(BusToken& token, uint8_t address, uint8_t reg, uint8_t* value,
+                         uint32_t timeout_ms = 100);
+
+  /**
+   * @brief Read multiple bytes starting from a register address.
+   *
+   * @param token The BusToken provided to the enqueued operation.
+   * @param address I2C device address.
+   * @param reg Starting register address.
+   * @param data Buffer to store read data.
+   * @param len Number of bytes to read.
+   * @param timeout_ms I2C operation timeout in milliseconds.
+   * @return esp_err_t ESP_OK on success.
+   */
+  esp_err_t ReadRegisters(BusToken& token, uint8_t address, uint8_t reg, uint8_t* data, size_t len,
+                          uint32_t timeout_ms = 100);
+
 private:
   static void TaskEntry(void* pvParameters);
   void TaskLoop();
