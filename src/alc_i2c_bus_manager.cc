@@ -66,70 +66,21 @@ void I2CBusManager::Enqueue(Operation op, Callback cb, TickType_t delay_ticks) {
   xSemaphoreGive(wake_sem_);
 }
 
-esp_err_t I2CBusManager::Write(uint8_t address, const uint8_t* data, size_t len, uint32_t timeout_ms) {
-  if (task_handle_ && xTaskGetCurrentTaskHandle() == task_handle_) {
-    return i2c_master_write_to_device(port_, address, data, len, pdMS_TO_TICKS(timeout_ms));
-  }
-
-  esp_err_t result = ESP_FAIL;
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) return ESP_ERR_NO_MEM;
-
-  Enqueue(
-      [address, data, len, timeout_ms, &result](i2c_port_t port) {
-        result = i2c_master_write_to_device(port, address, data, len, pdMS_TO_TICKS(timeout_ms));
-        return result;
-      },
-      [done](esp_err_t) { xSemaphoreGive(done); });
-
-  xSemaphoreTake(done, portMAX_DELAY);
-  vSemaphoreDelete(done);
-  return result;
+esp_err_t I2CBusManager::Write(BusToken&, uint8_t address, const uint8_t* data, size_t len,
+                               uint32_t timeout_ms) {
+  return i2c_master_write_to_device(port_, address, data, len, pdMS_TO_TICKS(timeout_ms));
 }
 
-esp_err_t I2CBusManager::Read(uint8_t address, uint8_t* buffer, size_t len, uint32_t timeout_ms) {
-  if (task_handle_ && xTaskGetCurrentTaskHandle() == task_handle_) {
-    return i2c_master_read_from_device(port_, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
-  }
-
-  esp_err_t result = ESP_FAIL;
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) return ESP_ERR_NO_MEM;
-
-  Enqueue(
-      [address, buffer, len, timeout_ms, &result](i2c_port_t port) {
-        result = i2c_master_read_from_device(port, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
-        return result;
-      },
-      [done](esp_err_t) { xSemaphoreGive(done); });
-
-  xSemaphoreTake(done, portMAX_DELAY);
-  vSemaphoreDelete(done);
-  return result;
+esp_err_t I2CBusManager::Read(BusToken&, uint8_t address, uint8_t* buffer, size_t len,
+                              uint32_t timeout_ms) {
+  return i2c_master_read_from_device(port_, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
 }
 
-esp_err_t I2CBusManager::WriteRead(uint8_t address, const uint8_t* write_data, size_t write_len,
-                                   uint8_t* read_buffer, size_t read_len, uint32_t timeout_ms) {
-  if (task_handle_ && xTaskGetCurrentTaskHandle() == task_handle_) {
-    return i2c_master_write_read_device(port_, address, write_data, write_len, read_buffer, read_len,
-                                        pdMS_TO_TICKS(timeout_ms));
-  }
-
-  esp_err_t result = ESP_FAIL;
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) return ESP_ERR_NO_MEM;
-
-  Enqueue(
-      [address, write_data, write_len, read_buffer, read_len, timeout_ms, &result](i2c_port_t port) {
-        result = i2c_master_write_read_device(port, address, write_data, write_len, read_buffer,
-                                              read_len, pdMS_TO_TICKS(timeout_ms));
-        return result;
-      },
-      [done](esp_err_t) { xSemaphoreGive(done); });
-
-  xSemaphoreTake(done, portMAX_DELAY);
-  vSemaphoreDelete(done);
-  return result;
+esp_err_t I2CBusManager::WriteRead(BusToken&, uint8_t address, const uint8_t* write_data,
+                                   size_t write_len, uint8_t* read_buffer, size_t read_len,
+                                   uint32_t timeout_ms) {
+  return i2c_master_write_read_device(port_, address, write_data, write_len, read_buffer, read_len,
+                                      pdMS_TO_TICKS(timeout_ms));
 }
 
 void I2CBusManager::TaskEntry(void* pvParameters) {
@@ -188,8 +139,9 @@ void I2CBusManager::TaskLoop() {
       }
     }
 
+    BusToken token;
     for (auto& req : to_run) {
-      esp_err_t err = req.op(port_);
+      esp_err_t err = req.op(token);
       if (req.callback) {
         req.callback(err);
       }

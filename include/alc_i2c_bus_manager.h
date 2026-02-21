@@ -17,7 +17,23 @@ namespace ALC {
  */
 class I2CBusManager {
 public:
-  using Operation = std::function<esp_err_t(i2c_port_t)>;
+  /**
+   * @brief Token required to perform I2C operations.
+   *
+   * This token can only be created by I2CBusManager and is passed to enqueued
+   * operations. This ensures that I2C operations can only be performed from
+   * within the I2CBusManager task context.
+   */
+  class BusToken {
+    friend class I2CBusManager;
+    BusToken() = default;
+
+  public:
+    BusToken(const BusToken&) = delete;
+    BusToken& operator=(const BusToken&) = delete;
+  };
+
+  using Operation = std::function<esp_err_t(BusToken&)>;
   using Callback = std::function<void(esp_err_t)>;
 
   struct Request {
@@ -58,42 +74,42 @@ public:
   /**
    * @brief Perform a synchronous I2C write.
    *
-   * This method is context-aware:
-   * - If called from within an Enqueue operation (i.e., from the I2CBusManager task),
-   *   it executes the I2C transaction immediately on the bus.
-   * - If called from another task, it enqueues the request and blocks the calling
-   *   task until the transaction is complete.
+   * @note This method can only be called from within an Enqueue operation,
+   * as it requires a BusToken.
    *
+   * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
    * @param data Pointer to the data to write.
    * @param len Number of bytes to write.
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t Write(uint8_t address, const uint8_t* data, size_t len, uint32_t timeout_ms = 100);
+  esp_err_t Write(BusToken& token, uint8_t address, const uint8_t* data, size_t len,
+                  uint32_t timeout_ms = 100);
 
   /**
    * @brief Perform a synchronous I2C read.
    *
-   * This method is context-aware:
-   * - If called from within an Enqueue operation, it executes immediately.
-   * - If called from another task, it enqueues the request and blocks the caller.
+   * @note This method can only be called from within an Enqueue operation,
+   * as it requires a BusToken.
    *
+   * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
    * @param buffer Buffer to store read data.
    * @param len Number of bytes to read.
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t Read(uint8_t address, uint8_t* buffer, size_t len, uint32_t timeout_ms = 100);
+  esp_err_t Read(BusToken& token, uint8_t address, uint8_t* buffer, size_t len,
+                 uint32_t timeout_ms = 100);
 
   /**
    * @brief Perform a synchronous I2C write followed by a read.
    *
-   * This method is context-aware:
-   * - If called from within an Enqueue operation, it executes immediately.
-   * - If called from another task, it enqueues the request and blocks the caller.
+   * @note This method can only be called from within an Enqueue operation,
+   * as it requires a BusToken.
    *
+   * @param token The BusToken provided to the enqueued operation.
    * @param address I2C device address.
    * @param write_data Pointer to the data to write.
    * @param write_len Number of bytes to write.
@@ -102,8 +118,9 @@ public:
    * @param timeout_ms I2C operation timeout in milliseconds.
    * @return esp_err_t ESP_OK on success, or an error code.
    */
-  esp_err_t WriteRead(uint8_t address, const uint8_t* write_data, size_t write_len,
-                     uint8_t* read_buffer, size_t read_len, uint32_t timeout_ms = 100);
+  esp_err_t WriteRead(BusToken& token, uint8_t address, const uint8_t* write_data,
+                      size_t write_len, uint8_t* read_buffer, size_t read_len,
+                      uint32_t timeout_ms = 100);
 
 private:
   static void TaskEntry(void* pvParameters);
