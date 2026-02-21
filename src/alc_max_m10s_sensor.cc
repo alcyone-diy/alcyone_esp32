@@ -8,59 +8,51 @@ static const char* TAG = "MaxM10sSensor";
 
 namespace ALC {
 
-MaxM10sSensor::MaxM10sSensor(i2c_port_t i2c_port, uint8_t address, uint32_t i2c_timeout_ms)
-  : i2c_port_(i2c_port), address_(address), i2c_timeout_ms_(i2c_timeout_ms) {
+MaxM10sSensor::MaxM10sSensor(I2CBusManager& bus_manager, uint8_t address)
+  : bus_manager_(bus_manager), address_(address) {
 }
 
 MaxM10sSensor::~MaxM10sSensor() {
 }
 
-esp_err_t MaxM10sSensor::Open() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  ESP_LOGI(TAG, "Opening MaxM10sSensor at address 0x%02X", address_);
+void MaxM10sSensor::Init(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) -> esp_err_t {
+    ESP_LOGI(TAG, "Initializing MaxM10sSensor at address 0x%02X", address_);
 
-  // Initial dummy read to clear anything in the buffer
-  Update();
+    // Initial dummy read to clear anything in the buffer
+    UpdateInternal(token);
 
-  // Enable UBX-NAV-PVT message on I2C
-  esp_err_t err = SetConfig(CFG_MSGOUT_UBX_NAV_PVT_I2C, (uint8_t)1);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to connect to MaxM10sSensor (check I2C): %s", esp_err_to_name(err));
-    return err;
-  }
+    // Enable UBX-NAV-PVT message on I2C
+    esp_err_t err = SetConfigInternal(token, CFG_MSGOUT_UBX_NAV_PVT_I2C, (uint8_t)1);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to connect to MaxM10sSensor: %s", esp_err_to_name(err));
+      return err;
+    }
 
-  // Enable UBX-NAV-DOP and UBX-NAV-SAT
-  SetConfig(CFG_MSGOUT_UBX_NAV_DOP_I2C, (uint8_t)1);
-  SetConfig(CFG_MSGOUT_UBX_NAV_SAT_I2C, (uint8_t)1);
+    // Enable UBX-NAV-DOP and UBX-NAV-SAT
+    SetConfigInternal(token, CFG_MSGOUT_UBX_NAV_DOP_I2C, (uint8_t)1);
+    SetConfigInternal(token, CFG_MSGOUT_UBX_NAV_SAT_I2C, (uint8_t)1);
 
-  // Set 5Hz measurement rate (200ms)
-  SetMeasurementRate(200);
-
-  return ESP_OK;
+    // Set 5Hz measurement rate (200ms)
+    return SetConfigInternal(token, CFG_RATE_MEAS, (uint16_t)200);
+  }, cb);
 }
 
-esp_err_t MaxM10sSensor::Close() {
-  return ESP_OK;
+void MaxM10sSensor::Close() {
 }
 
-esp_err_t MaxM10sSensor::Update() {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
+void MaxM10sSensor::Update(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    return UpdateInternal(token);
+  }, cb);
+}
 
+esp_err_t MaxM10sSensor::UpdateInternal(BusToken& token) {
   // Read available length from registers 0xFD and 0xFE
   uint8_t len_reg = 0xFD;
   uint8_t len_bytes[2] = {0, 0};
 
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write_byte(cmd, len_reg, true);
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-  i2c_master_read(cmd, len_bytes, 2, I2C_MASTER_LAST_NACK);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
-
+  esp_err_t err = bus_manager_.WriteRead(token, address_, &len_reg, 1, len_bytes, 2);
   if (err != ESP_OK) return err;
 
   uint16_t available = (len_bytes[0] << 8) | len_bytes[1];
@@ -75,21 +67,14 @@ esp_err_t MaxM10sSensor::Update() {
   while (available > 0) {
     uint16_t to_read = (available > 128) ? 128 : available;
 
-    cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, data_reg, true);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_READ, true);
-    i2c_master_read(cmd, chunk, to_read, I2C_MASTER_LAST_NACK);
-    i2c_master_stop(cmd);
-    err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-    i2c_cmd_link_delete(cmd);
-
+    err = bus_manager_.WriteRead(token, address_, &data_reg, 1, chunk, to_read);
     if (err != ESP_OK) break;
 
-    for (uint16_t i = 0; i < to_read; ++i) {
-      ProcessByte(chunk[i]);
+    {
+      std::lock_guard<std::recursive_mutex> lock(mutex_);
+      for (uint16_t i = 0; i < to_read; ++i) {
+        ProcessByte(chunk[i]);
+      }
     }
     available -= to_read;
   }
@@ -236,9 +221,9 @@ void MaxM10sSensor::HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t
   }
 }
 
-esp_err_t MaxM10sSensor::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
+esp_err_t MaxM10sSensor::SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len) {
   uint16_t total_len = len + 8;
-  uint8_t frame[total_len];
+  std::vector<uint8_t> frame(total_len);
   frame[0] = 0xB5;
   frame[1] = 0x62;
   frame[2] = msgClass;
@@ -246,7 +231,7 @@ esp_err_t MaxM10sSensor::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t*
   frame[4] = len & 0xFF;
   frame[5] = (len >> 8) & 0xFF;
   if (len > 0 && payload != nullptr) {
-    memcpy(frame + 6, payload, len);
+    memcpy(frame.data() + 6, payload, len);
   }
 
   uint8_t ck_a = 0, ck_b = 0;
@@ -257,80 +242,101 @@ esp_err_t MaxM10sSensor::SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t*
   frame[total_len - 2] = ck_a;
   frame[total_len - 1] = ck_b;
 
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write(cmd, frame, total_len, true);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
-
-  return err;
+  return bus_manager_.Write(token, address_, frame.data(), total_len);
 }
 
-esp_err_t MaxM10sSensor::SetMeasurementRate(uint16_t rate_ms) {
-  return SetConfig(CFG_RATE_MEAS, rate_ms);
+void MaxM10sSensor::SetMeasurementRate(uint16_t rate_ms, Callback cb) {
+  SetConfig(CFG_RATE_MEAS, rate_ms, cb);
 }
 
-esp_err_t MaxM10sSensor::SetNavigationRate(uint16_t cycles) {
-  return SetConfig(CFG_RATE_NAV, cycles);
+void MaxM10sSensor::SetNavigationRate(uint16_t cycles, Callback cb) {
+  SetConfig(CFG_RATE_NAV, cycles, cb);
 }
 
-esp_err_t MaxM10sSensor::SetDynamicModel(DynamicModel model) {
-  return SetConfig(CFG_NAVSPG_DYNMODEL, (uint8_t)model);
+void MaxM10sSensor::SetDynamicModel(DynamicModel model, Callback cb) {
+  SetConfig(CFG_NAVSPG_DYNMODEL, (uint8_t)model, cb);
 }
 
-esp_err_t MaxM10sSensor::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass) {
-  esp_err_t err;
-  err = SetConfig(CFG_SIGNAL_GPS_ENA, gps);
-  if (err != ESP_OK) return err;
-  err = SetConfig(CFG_SIGNAL_GAL_ENA, galileo);
-  if (err != ESP_OK) return err;
-  err = SetConfig(CFG_SIGNAL_BDS_ENA, beidou);
-  if (err != ESP_OK) return err;
-  err = SetConfig(CFG_SIGNAL_GLO_ENA, glonass);
-  return err;
+void MaxM10sSensor::SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass, Callback cb) {
+  bus_manager_.Enqueue([this, gps, galileo, beidou, glonass](BusToken& token) -> esp_err_t {
+    esp_err_t err = SetConfigInternal(token, CFG_SIGNAL_GPS_ENA, gps);
+    if (err != ESP_OK) return err;
+    err = SetConfigInternal(token, CFG_SIGNAL_GAL_ENA, galileo);
+    if (err != ESP_OK) return err;
+    err = SetConfigInternal(token, CFG_SIGNAL_BDS_ENA, beidou);
+    if (err != ESP_OK) return err;
+    return SetConfigInternal(token, CFG_SIGNAL_GLO_ENA, glonass);
+  }, cb);
 }
 
-esp_err_t MaxM10sSensor::SetOperatingMode(OperatingMode mode) {
-  return SetConfig(CFG_PM_OPERATEMODE, (uint8_t)mode);
+void MaxM10sSensor::SetOperatingMode(OperatingMode mode, Callback cb) {
+  SetConfig(CFG_PM_OPERATEMODE, (uint8_t)mode, cb);
 }
 
-esp_err_t MaxM10sSensor::Standby(uint32_t duration_ms) {
+void MaxM10sSensor::Standby(uint32_t duration_ms, Callback cb) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
   uint32_t flags = 0x02; // Force
   memcpy(payload + 4, &flags, 4);
-  return SendUBX(0x02, 0x41, payload, 8);
+
+  std::vector<uint8_t> p(payload, payload + 8);
+  bus_manager_.Enqueue([this, p](BusToken& token) {
+    return SendUBX(token, 0x02, 0x41, p.data(), 8);
+  }, cb);
 }
 
-esp_err_t MaxM10sSensor::Hibernate(uint32_t duration_ms) {
+void MaxM10sSensor::Hibernate(uint32_t duration_ms, Callback cb) {
   uint8_t payload[8];
   memset(payload, 0, 8);
   memcpy(payload, &duration_ms, 4);
   uint32_t flags = 0x06; // Backup + Force
   memcpy(payload + 4, &flags, 4);
-  return SendUBX(0x02, 0x41, payload, 8);
+
+  std::vector<uint8_t> p(payload, payload + 8);
+  bus_manager_.Enqueue([this, p](BusToken& token) {
+    return SendUBX(token, 0x02, 0x41, p.data(), 8);
+  }, cb);
 }
 
-esp_err_t MaxM10sSensor::Wake() {
-  // Sending a dummy byte to the I2C address is usually enough to wake the device
-  uint8_t dummy = 0xFF;
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (address_ << 1) | I2C_MASTER_WRITE, true);
-  i2c_master_write_byte(cmd, dummy, true);
-  i2c_master_stop(cmd);
-  esp_err_t err = i2c_master_cmd_begin(i2c_port_, cmd, pdMS_TO_TICKS(i2c_timeout_ms_));
-  i2c_cmd_link_delete(cmd);
-
-  // Wait a bit for the device to wake up
-  vTaskDelay(pdMS_TO_TICKS(50));
-  return err;
+void MaxM10sSensor::Wake(Callback cb) {
+  bus_manager_.Enqueue([this](BusToken& token) {
+    // Sending a dummy byte to the I2C address is usually enough to wake the device
+    uint8_t dummy = 0xFF;
+    return bus_manager_.Write(token, address_, &dummy, 1);
+  }, [this, cb](esp_err_t err) {
+    if (err != ESP_OK) {
+      if (cb) cb(err);
+      return;
+    }
+    // Wait a bit for the device to wake up
+    bus_manager_.Enqueue([](BusToken&) { return ESP_OK; }, cb, pdMS_TO_TICKS(50));
+  });
 }
 
-esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint8_t value) {
+void MaxM10sSensor::SetConfig(uint32_t key, uint8_t value, Callback cb) {
+  bus_manager_.Enqueue([this, key, value](BusToken& token) {
+    return SetConfigInternal(token, key, value);
+  }, cb);
+}
+
+void MaxM10sSensor::SetConfig(uint32_t key, uint16_t value, Callback cb) {
+  bus_manager_.Enqueue([this, key, value](BusToken& token) {
+    return SetConfigInternal(token, key, value);
+  }, cb);
+}
+
+void MaxM10sSensor::SetConfig(uint32_t key, uint32_t value, Callback cb) {
+  bus_manager_.Enqueue([this, key, value](BusToken& token) {
+    return SetConfigInternal(token, key, value);
+  }, cb);
+}
+
+void MaxM10sSensor::SetConfig(uint32_t key, bool value, Callback cb) {
+  SetConfig(key, (uint8_t)(value ? 1 : 0), cb);
+}
+
+esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint8_t value) {
   uint8_t payload[9];
   payload[0] = 0;    // Version 0
   payload[1] = 0x01; // Layers: 1 = RAM
@@ -338,10 +344,10 @@ esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint8_t value) {
   payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   payload[8] = value;
-  return SendUBX(0x06, 0x8A, payload, 9);
+  return SendUBX(token, 0x06, 0x8A, payload, 9);
 }
 
-esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint16_t value) {
+esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint16_t value) {
   uint8_t payload[10];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -349,10 +355,10 @@ esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint16_t value) {
   payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   memcpy(payload + 8, &value, 2);
-  return SendUBX(0x06, 0x8A, payload, 10);
+  return SendUBX(token, 0x06, 0x8A, payload, 10);
 }
 
-esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint32_t value) {
+esp_err_t MaxM10sSensor::SetConfigInternal(BusToken& token, uint32_t key, uint32_t value) {
   uint8_t payload[12];
   payload[0] = 0;
   payload[1] = 0x01;
@@ -360,14 +366,11 @@ esp_err_t MaxM10sSensor::SetConfig(uint32_t key, uint32_t value) {
   payload[3] = 0;
   memcpy(payload + 4, &key, 4);
   memcpy(payload + 8, &value, 4);
-  return SendUBX(0x06, 0x8A, payload, 12);
-}
-
-esp_err_t MaxM10sSensor::SetConfig(uint32_t key, bool value) {
-  return SetConfig(key, (uint8_t)(value ? 1 : 0));
+  return SendUBX(token, 0x06, 0x8A, payload, 12);
 }
 
 void MaxM10sSensor::ResetParser() {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
   parse_state_ = ParseState::SYNC1;
   rx_idx_ = 0;
   rx_len_ = 0;
