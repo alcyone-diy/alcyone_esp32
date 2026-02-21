@@ -41,15 +41,20 @@ bool Storage::KeyExists(const std::string& key) {
     return false;
   }
 
-  nvs_iterator_t it = nvs_entry_find("nvs", name_space_.c_str(), NVS_TYPE_ANY);
-  while (it != NULL) {
+  nvs_iterator_t it = NULL;
+  esp_err_t err = nvs_entry_find("nvs", name_space_.c_str(), NVS_TYPE_ANY, &it);
+  while (err == ESP_OK && it != NULL) {
     nvs_entry_info_t info;
     nvs_entry_info(it, &info);
     if (key == info.key) {
       nvs_release_iterator(it);
       return true;
     }
-    it = nvs_entry_next(it);
+    err = nvs_entry_next(&it);
+  }
+
+  if (it != NULL) {
+    nvs_release_iterator(it);
   }
   return false;
 }
