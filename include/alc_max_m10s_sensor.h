@@ -240,6 +240,7 @@ private:
   esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint8_t value);
   esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint16_t value);
   esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint32_t value);
+  esp_err_t SetConfigInternal(BusToken& token, uint32_t key, bool value);
 
   void ProcessByte(uint8_t byte);
   void HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
