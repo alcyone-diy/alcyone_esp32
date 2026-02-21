@@ -2,6 +2,7 @@
 
 #include "driver/i2c.h"
 #include "esp_err.h"
+#include "alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -13,6 +14,9 @@ namespace ALC {
  */
 class MaxM10sSensor {
 public:
+  using Callback = I2CBusManager::Callback;
+  using BusToken = I2CBusManager::BusToken;
+
   /**
    * @brief Navigation Position Velocity Time Solution data.
    */
@@ -151,8 +155,11 @@ public:
 
   /**
    * @brief Construct a new MaxM10sSensor object.
+   *
+   * @param bus_manager Reference to the I2C bus manager.
+   * @param address I2C address of the sensor (default: 0x42).
    */
-  explicit MaxM10sSensor(i2c_port_t i2c_port, uint8_t address = 0x42, uint32_t i2c_timeout_ms = 100);
+  explicit MaxM10sSensor(I2CBusManager& bus_manager, uint8_t address = 0x42);
   ~MaxM10sSensor();
 
   MaxM10sSensor() = delete;
@@ -163,20 +170,22 @@ public:
 
   /**
    * @brief Initialize communication and basic configuration.
-   * @return esp_err_t ESP_OK on success.
+   *
+   * @param cb Optional callback called when initialization is complete.
    */
-  esp_err_t Open();
+  void Init(Callback cb = nullptr);
 
   /**
    * @brief Close the driver.
    */
-  esp_err_t Close();
+  void Close();
 
   /**
    * @brief Poll for new data and update internal state. Non-blocking.
-   * @return esp_err_t ESP_OK on success.
+   *
+   * @param cb Optional callback called when update is complete.
    */
-  esp_err_t Update();
+  void Update(Callback cb = nullptr);
 
   // Getters for latest data
   PVTData GetPVT() const;
@@ -184,63 +193,64 @@ public:
   std::vector<SatInfo> GetSatellites() const;
 
   // Configuration Methods
-  esp_err_t SetMeasurementRate(uint16_t rate_ms);
-  esp_err_t SetNavigationRate(uint16_t cycles);
-  esp_err_t SetDynamicModel(DynamicModel model);
-  esp_err_t SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass);
+  void SetMeasurementRate(uint16_t rate_ms, Callback cb = nullptr);
+  void SetNavigationRate(uint16_t cycles, Callback cb = nullptr);
+  void SetDynamicModel(DynamicModel model, Callback cb = nullptr);
+  void SetGNSSSystems(bool gps, bool galileo, bool beidou, bool glonass, Callback cb = nullptr);
 
   /**
    * @brief Set the operating mode (Continuous vs Balanced).
    */
-  esp_err_t SetOperatingMode(OperatingMode mode);
+  void SetOperatingMode(OperatingMode mode, Callback cb = nullptr);
 
   /**
    * @brief Put the device into software standby (Inactive mode).
    *
    * @param duration_ms Time to stay asleep. 0 means stay asleep until Wake() is called.
-   * Pros: Low power (RAM retained), fast wake.
-   * Cons: Higher consumption than hardware backup mode.
+   * @param cb Optional callback.
    */
-  esp_err_t Standby(uint32_t duration_ms = 0);
+  void Standby(uint32_t duration_ms = 0, Callback cb = nullptr);
 
   /**
    * @brief Put the device into hardware backup (Deep sleep).
    *
    * @param duration_ms Time to stay asleep.
-   * Pros: Lowest possible power consumption.
-   * Cons: RAM might not be retained if not battery-backed; slower wake (re-acquisition).
+   * @param cb Optional callback.
    */
-  esp_err_t Hibernate(uint32_t duration_ms = 0);
+  void Hibernate(uint32_t duration_ms = 0, Callback cb = nullptr);
 
   /**
    * @brief Wake the device from Standby or Hibernate.
    *
-   * For I2C, this is usually achieved by sending a dummy byte or a START condition.
+   * @param cb Optional callback.
    */
-  esp_err_t Wake();
+  void Wake(Callback cb = nullptr);
 
   /**
    * @brief Generic configuration using UBX-CFG-VALSET.
    */
-  esp_err_t SetConfig(uint32_t key, uint8_t value);
-  esp_err_t SetConfig(uint32_t key, uint16_t value);
-  esp_err_t SetConfig(uint32_t key, uint32_t value);
-  esp_err_t SetConfig(uint32_t key, bool value);
+  void SetConfig(uint32_t key, uint8_t value, Callback cb = nullptr);
+  void SetConfig(uint32_t key, uint16_t value, Callback cb = nullptr);
+  void SetConfig(uint32_t key, uint32_t value, Callback cb = nullptr);
+  void SetConfig(uint32_t key, bool value, Callback cb = nullptr);
 
 private:
-  i2c_port_t i2c_port_;
+  esp_err_t SendUBX(BusToken& token, uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
+  esp_err_t UpdateInternal(BusToken& token);
+  esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint8_t value);
+  esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint16_t value);
+  esp_err_t SetConfigInternal(BusToken& token, uint32_t key, uint32_t value);
+
+  void ProcessByte(uint8_t byte);
+  void HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
+
+  I2CBusManager& bus_manager_;
   uint8_t address_;
-  uint32_t i2c_timeout_ms_;
   mutable std::recursive_mutex mutex_;
 
   PVTData pvt_data_;
   DOPData dop_data_;
   std::vector<SatInfo> sat_data_;
-
-  // Protocol helpers
-  esp_err_t SendUBX(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
-  void ProcessByte(uint8_t byte);
-  void HandleMessage(uint8_t msgClass, uint8_t msgID, const uint8_t* payload, uint16_t len);
 
   // Parsing state
   enum class ParseState {
