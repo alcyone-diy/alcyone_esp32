@@ -26,10 +26,10 @@ public:
    */
   class BusToken {
     friend class I2CBusManager;
-    explicit BusToken(I2CBusManager* mgr) : manager_(mgr) {}
+    explicit BusToken(I2CBusManager* mgr) : manager_(mgr), valid_(true) {}
 
     I2CBusManager* manager_{nullptr};
-    bool valid_{false};
+    bool valid_{true};
 
   public:
     BusToken(const BusToken&) = delete;

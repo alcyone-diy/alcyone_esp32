@@ -145,9 +145,8 @@ void I2CBusManager::TaskLoop() {
       }
     }
 
-    BusToken token(this);
     for (auto& req : to_run) {
-      token.valid_ = true;
+      BusToken token(this);
       esp_err_t err = req.op(token);
       token.valid_ = false;
       if (req.callback) {
