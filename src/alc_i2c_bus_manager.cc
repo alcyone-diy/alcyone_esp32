@@ -68,23 +68,23 @@ void I2CBusManager::Enqueue(Operation op, Callback cb, TickType_t delay_ticks) {
 
 esp_err_t I2CBusManager::Write(BusToken& token, uint8_t address, const uint8_t* data, size_t len,
                                uint32_t timeout_ms) {
-  if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
-  if (!token.valid_) return ESP_ERR_INVALID_STATE;
+  if (token.manager() != this) return ESP_ERR_INVALID_ARG;
+  if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
   return i2c_master_write_to_device(port_, address, data, len, pdMS_TO_TICKS(timeout_ms));
 }
 
 esp_err_t I2CBusManager::Read(BusToken& token, uint8_t address, uint8_t* buffer, size_t len,
                               uint32_t timeout_ms) {
-  if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
-  if (!token.valid_) return ESP_ERR_INVALID_STATE;
+  if (token.manager() != this) return ESP_ERR_INVALID_ARG;
+  if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
   return i2c_master_read_from_device(port_, address, buffer, len, pdMS_TO_TICKS(timeout_ms));
 }
 
 esp_err_t I2CBusManager::WriteRead(BusToken& token, uint8_t address, const uint8_t* write_data,
                                    size_t write_len, uint8_t* read_buffer, size_t read_len,
                                    uint32_t timeout_ms) {
-  if (token.manager_ != this) return ESP_ERR_INVALID_ARG;
-  if (!token.valid_) return ESP_ERR_INVALID_STATE;
+  if (token.manager() != this) return ESP_ERR_INVALID_ARG;
+  if (!token.is_valid()) return ESP_ERR_INVALID_STATE;
   return i2c_master_write_read_device(port_, address, write_data, write_len, read_buffer, read_len,
                                       pdMS_TO_TICKS(timeout_ms));
 }
@@ -146,9 +146,9 @@ void I2CBusManager::TaskLoop() {
     }
 
     for (auto& req : to_run) {
-      BusToken token(this);
+      BusToken token(BusToken::Key{}, this);
       esp_err_t err = req.op(token);
-      token.valid_ = false;
+      token.invalidate();
       if (req.callback) {
         req.callback(err);
       }

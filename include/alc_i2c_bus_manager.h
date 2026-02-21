@@ -25,15 +25,24 @@ public:
    * within the I2CBusManager task context.
    */
   class BusToken {
-    friend class I2CBusManager;
-    explicit BusToken(I2CBusManager* mgr) : manager_(mgr), valid_(true) {}
-
-    I2CBusManager* manager_{nullptr};
-    bool valid_{true};
-
   public:
+    struct Key {
+      friend class I2CBusManager;
+    private:
+      Key() = default;
+    };
+
+    BusToken(Key, I2CBusManager* mgr) : manager_(mgr), valid_(true) {}
     BusToken(const BusToken&) = delete;
     BusToken& operator=(const BusToken&) = delete;
+
+    bool is_valid() const { return valid_; }
+    I2CBusManager* manager() const { return manager_; }
+    void invalidate() { valid_ = false; }
+
+  private:
+    I2CBusManager* manager_;
+    bool valid_;
   };
 
   using Operation = std::function<esp_err_t(BusToken&)>;
