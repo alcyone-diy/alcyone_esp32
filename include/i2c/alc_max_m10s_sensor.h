@@ -1,7 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
-#include "alc_i2c_bus_manager.h"
+#include "i2c/alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -9,7 +9,7 @@
 namespace ALC {
 
 /**
- * @brief Driver for u-blox MAX-M10S GNSS module using UBX protocol over I2C.
+ * @brief Sensor for u-blox MAX-M10S GNSS module using UBX protocol over I2C.
  */
 class MaxM10sSensor {
 public:
@@ -156,7 +156,7 @@ public:
    * @brief Construct a new MaxM10sSensor object.
    *
    * @param bus_manager Reference to the I2C bus manager.
-   * @param address I2C address of the driver (default: 0x42).
+   * @param address I2C address of the sensor (default: 0x42).
    */
   explicit MaxM10sSensor(I2CBusManager& bus_manager, uint16_t address = 0x42);
   ~MaxM10sSensor();
@@ -175,7 +175,7 @@ public:
   void Init(Callback cb = nullptr);
 
   /**
-   * @brief Close the driver.
+   * @brief Close the sensor.
    */
   void Close();
 

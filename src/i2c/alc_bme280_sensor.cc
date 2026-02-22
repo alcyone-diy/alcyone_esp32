@@ -1,4 +1,4 @@
-#include "alc_bme280_sensor.h"
+#include "i2c/alc_bme280_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include <cstring>
@@ -100,13 +100,13 @@ esp_err_t BME280Sensor::ApplyConfiguration(BusToken& token) {
 }
 
 void BME280Sensor::ReadAll(Callback cb) {
-  DriverMode current_mode;
+  SensorMode current_mode;
   {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     current_mode = config_.mode;
   }
 
-  if (current_mode == DriverMode::FORCED) {
+  if (current_mode == SensorMode::FORCED) {
     bus_manager_.Enqueue([this](BusToken& token) -> esp_err_t {
       Configuration current_config;
       {
@@ -116,7 +116,7 @@ void BME280Sensor::ReadAll(Callback cb) {
       // Trigger Forced Mode measurement
       uint8_t ctrl_meas = (static_cast<uint8_t>(current_config.temp_os) << 5) |
                           (static_cast<uint8_t>(current_config.press_os) << 2) |
-                          static_cast<uint8_t>(DriverMode::FORCED);
+                          static_cast<uint8_t>(SensorMode::FORCED);
       return bus_manager_.WriteRegister(token, address_, BME280_REG_CTRL_MEAS, ctrl_meas);
     }, [this, cb](esp_err_t err) {
       if (err != ESP_OK) {

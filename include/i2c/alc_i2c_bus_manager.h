@@ -203,6 +203,7 @@ private:
 
   TaskHandle_t task_handle_{nullptr};
   SemaphoreHandle_t wake_sem_{nullptr};
+  SemaphoreHandle_t done_sem_{nullptr};
   std::mutex mutex_;
 
   std::vector<Request> immediate_requests_;

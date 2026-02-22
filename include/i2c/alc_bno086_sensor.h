@@ -1,22 +1,22 @@
 #pragma once
 
 #include "esp_err.h"
-#include "alc_i2c_bus_manager.h"
+#include "i2c/alc_i2c_bus_manager.h"
 #include <cstdint>
 #include <mutex>
 
 namespace ALC {
 
 /**
- * @brief BNO086Sensor IMU driver for ESP-IDF.
+ * @brief BNO086Sensor IMU sensor for ESP-IDF.
  *
- * This class implements the SH-2 protocol over I2C to communicate with the BNO086 driver.
+ * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
  * It utilizes the ALC::I2CBusManager for non-blocking, serialized I2C access.
  *
  * ### Usage
  * 1. Instantiate the @ref BNO086Sensor class with a reference to the I2CBusManager.
- * 2. Call @ref Init() to initialize the driver and perform a soft reset.
- * 3. Call one or more `Enable...()` methods to start receiving data from specific drivers.
+ * 2. Call @ref Init() to initialize the sensor and perform a soft reset.
+ * 3. Call one or more `Enable...()` methods to start receiving data from specific sensors.
  * 4. Call @ref Update() periodically to poll for new packets.
  * 5. Retrieve the latest data using the corresponding `Get...()` methods.
  */
@@ -26,7 +26,7 @@ public:
   using BusToken = I2CBusManager::BusToken;
 
   /**
-   * @brief A 3D vector for driver data.
+   * @brief A 3D vector for sensor data.
    */
   struct Vector3 {
     float x;           ///< X-axis value (m/s^2 for accel, rad/s for gyro, uT for mag)
@@ -79,7 +79,7 @@ public:
   BNO086Sensor() = delete;
 
   /**
-   * @brief Copying or moving a driver instance is not allowed.
+   * @brief Copying or moving a sensor instance is not allowed.
    */
   BNO086Sensor(const BNO086Sensor&) = delete;
   BNO086Sensor& operator=(const BNO086Sensor&) = delete;
@@ -87,13 +87,13 @@ public:
   BNO086Sensor& operator=(BNO086Sensor&&) = delete;
 
   /**
-   * @brief Initialize the driver. Performs a soft reset and waits for advertisement.
+   * @brief Initialize the sensor. Performs a soft reset and waits for advertisement.
    * @param cb Optional callback called when initialization is complete.
    */
   void Init(Callback cb = nullptr);
 
   /**
-   * @brief Read pending packets from the driver. Non-blocking.
+   * @brief Read pending packets from the sensor. Non-blocking.
    * @param cb Optional callback called when update is complete.
    */
   void Update(Callback cb = nullptr);
@@ -188,18 +188,18 @@ public:
   void SetCalibrationConfig(bool accel, bool gyro, bool mag, Callback cb = nullptr);
 
   /**
-   * @brief Command the driver to save its current calibration to flash.
+   * @brief Command the sensor to save its current calibration to flash.
    */
   void SaveCalibration(Callback cb = nullptr);
 
   /**
-   * @brief Perform a soft reset of the driver.
+   * @brief Perform a soft reset of the sensor.
    */
   void SoftReset(Callback cb = nullptr);
 
   /**
-   * @brief Set the driver power mode.
-   * @param sleep True to put the driver to sleep, false to wake it up (On).
+   * @brief Set the sensor power mode.
+   * @param sleep True to put the sensor to sleep, false to wake it up (On).
    */
   void SetPowerMode(bool sleep, Callback cb = nullptr);
 

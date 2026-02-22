@@ -1,4 +1,4 @@
-#include "alc_i2c_bus_manager.h"
+#include "i2c/alc_i2c_bus_manager.h"
 #include "esp_log.h"
 
 namespace {
@@ -9,6 +9,7 @@ namespace ALC {
 
 I2CBusManager::I2CBusManager(i2c_port_t port) : port_(port) {
   wake_sem_ = xSemaphoreCreateBinary();
+  done_sem_ = xSemaphoreCreateBinary();
 }
 
 I2CBusManager::~I2CBusManager() {
@@ -17,21 +18,21 @@ I2CBusManager::~I2CBusManager() {
     xSemaphoreGive(wake_sem_);
   }
 
-  // Wait for task to exit (max 100ms)
-  int timeout = 100;
-  while (task_handle_ != nullptr && timeout-- > 0) {
-    vTaskDelay(pdMS_TO_TICKS(1));
+  if (task_handle_ && done_sem_) {
+    xSemaphoreTake(done_sem_, pdMS_TO_TICKS(100));
   }
 
-  if (task_handle_) {
-    vTaskDelete(task_handle_);
-    task_handle_ = nullptr;
+  if (done_sem_) {
+    vSemaphoreDelete(done_sem_);
+    done_sem_ = nullptr;
   }
 
   if (wake_sem_) {
     vSemaphoreDelete(wake_sem_);
     wake_sem_ = nullptr;
   }
+
+  task_handle_ = nullptr;
 
   std::lock_guard<std::mutex> lock(mutex_);
   immediate_requests_.clear();
@@ -230,7 +231,9 @@ void I2CBusManager::TaskLoop() {
       }
     }
   }
-  task_handle_ = nullptr;
+  if (done_sem_) {
+    xSemaphoreGive(done_sem_);
+  }
   vTaskDelete(NULL);
 }
 

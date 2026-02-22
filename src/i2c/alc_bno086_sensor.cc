@@ -1,4 +1,4 @@
-#include "alc_bno086_sensor.h"
+#include "i2c/alc_bno086_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include <cstring>
@@ -19,7 +19,7 @@ constexpr char kTag[] = "ALC_BNO086Sensor";
 #define SH2_COMMAND_ME_CALIBRATION                    0x07
 #define SH2_COMMAND_SAVE_DCD                          0x06
 
-// Driver Report IDs
+// Sensor Report IDs
 #define DRIVER_REPORTID_ACCELEROMETER                 0x01
 #define DRIVER_REPORTID_GYROSCOPE                     0x02
 #define DRIVER_REPORTID_MAGNETIC_FIELD                0x03
@@ -56,8 +56,8 @@ void BNO086Sensor::Init(Callback cb) {
       if (cb) cb(err);
       return;
     }
-    // The driver sends an advertisement packet after reset.
-    // We poll for it to ensure the driver is ready.
+    // The sensor sends an advertisement packet after reset.
+    // We poll for it to ensure the sensor is ready.
     PollForAdvertisement(100, cb);
   });
 }
