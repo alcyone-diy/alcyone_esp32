@@ -1,23 +1,45 @@
 #include "i2c/alc_i2c_bus_manager.h"
 #include "esp_log.h"
 
-static const char* TAG = "ALC_I2CBusManager";
+namespace {
+constexpr char kTag[] = "ALC_I2CBusManager";
+}
 
 namespace ALC {
 
 I2CBusManager::I2CBusManager(i2c_port_t port) : port_(port) {
   wake_sem_ = xSemaphoreCreateBinary();
+  done_sem_ = xSemaphoreCreateBinary();
 }
 
 I2CBusManager::~I2CBusManager() {
-  if (task_handle_) {
-    vTaskDelete(task_handle_);
+  running_ = false;
+  if (wake_sem_) {
+    xSemaphoreGive(wake_sem_);
   }
+
+  if (task_handle_) {
+    if (done_sem_) {
+      xSemaphoreTake(done_sem_, pdMS_TO_TICKS(100));
+    }
+    vTaskDelete(task_handle_);
+    task_handle_ = nullptr;
+  }
+
+  if (done_sem_) {
+    vSemaphoreDelete(done_sem_);
+    done_sem_ = nullptr;
+  }
+
   if (wake_sem_) {
     vSemaphoreDelete(wake_sem_);
+    wake_sem_ = nullptr;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
+  immediate_requests_.clear();
+  delayed_requests_.clear();
+
   for (auto const& [addr, handle] : dev_handles_) {
     i2c_master_bus_rm_device(handle);
   }
@@ -25,6 +47,7 @@ I2CBusManager::~I2CBusManager() {
 
   if (bus_handle_) {
     i2c_del_master_bus(bus_handle_);
+    bus_handle_ = nullptr;
   }
 }
 
@@ -41,17 +64,18 @@ esp_err_t I2CBusManager::Init(int sda_pin, int scl_pin, uint32_t clk_speed) {
 
   esp_err_t err = i2c_new_master_bus(&bus_conf, &bus_handle_);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "I2C new master bus failed: %s", esp_err_to_name(err));
+    ESP_LOGE(kTag, "I2C new master bus failed: %s", esp_err_to_name(err));
     return err;
   }
 
+  running_ = true;
   BaseType_t ret = xTaskCreate(TaskEntry, "i2c_bus_mgr", 4096, this, 5, &task_handle_);
   if (ret != pdPASS) {
-    ESP_LOGE(TAG, "Failed to create task");
+    ESP_LOGE(kTag, "Failed to create task");
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "I2CBusManager initialized on port %d", port_);
+  ESP_LOGI(kTag, "I2CBusManager initialized on port %d", port_);
   return ESP_OK;
 }
 
@@ -133,7 +157,7 @@ esp_err_t I2CBusManager::GetOrCreateDevice(uint16_t address, i2c_master_dev_hand
   }
 
   i2c_device_config_t dev_conf = {};
-  dev_conf.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+  dev_conf.dev_addr_length = (address > 0x7F) ? I2C_ADDR_BIT_LEN_10 : I2C_ADDR_BIT_LEN_7;
   dev_conf.device_address = address;
   dev_conf.scl_speed_hz = default_clk_speed_;
 
@@ -150,7 +174,7 @@ void I2CBusManager::TaskEntry(void* pvParameters) {
 
 void I2CBusManager::TaskLoop() {
   std::vector<Request> to_run;
-  while (true) {
+  while (running_) {
     TickType_t now = xTaskGetTickCount();
     TickType_t wait_ticks = portMAX_DELAY;
 
@@ -209,6 +233,11 @@ void I2CBusManager::TaskLoop() {
       }
     }
   }
+  if (done_sem_) {
+    xSemaphoreGive(done_sem_);
+  }
+  // Wait to be deleted by destructor
+  vTaskSuspend(NULL);
 }
 
 } // namespace ALC

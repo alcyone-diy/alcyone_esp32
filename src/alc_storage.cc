@@ -3,7 +3,9 @@
 #include <vector>
 #include "esp_log.h"
 
-#define TAG "ALC_Storage"
+namespace {
+constexpr char kTag[] = "ALC_Storage";
+}
 
 namespace ALC {
 
@@ -20,7 +22,7 @@ esp_err_t Storage::Open() {
   }
   esp_err_t err = nvs_open(name_space_.c_str(), NVS_READWRITE, &handle_);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Error (%s) opening NVS handle for namespace %s!", esp_err_to_name(err),
+    ESP_LOGE(kTag, "Error (%s) opening NVS handle for namespace %s!", esp_err_to_name(err),
              name_space_.c_str());
   } else {
     opened_ = true;
