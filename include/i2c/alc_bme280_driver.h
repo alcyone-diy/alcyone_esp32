@@ -1,7 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
-#include "alc_i2c_bus_manager.h"
+#include "i2c/alc_i2c_bus_manager.h"
 #include <mutex>
 
 namespace ALC {
