@@ -7,7 +7,11 @@
 namespace ALC {
 
 /**
- * @brief BME280Sensor sensor class for ESP-IDF.
+ * @brief Driver for the BME280 environmental sensor.
+ *
+ * This class provides an asynchronous interface to the BME280 sensor, supporting
+ * temperature, pressure, and humidity measurements. It utilizes ALC::I2CBusManager
+ * for serialized, non-blocking bus access.
  */
 class BME280Sensor {
 public:
@@ -179,7 +183,7 @@ private:
     int16_t  dig_H4;
     int16_t  dig_H5;
     int8_t   dig_H6;
-  } calib_;
+  } calib_{};
 
   int32_t t_fine_{0};
   float temperature_{0.0f};

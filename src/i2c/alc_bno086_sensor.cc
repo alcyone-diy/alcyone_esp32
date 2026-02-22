@@ -72,8 +72,8 @@ void BNO086Sensor::PollForAdvertisement(int attempts_left, Callback cb) {
     } else if (attempts_left > 0) {
       PollForAdvertisement(attempts_left - 1, cb);
     } else {
-      ESP_LOGW(kTag, "Did not receive advertisement packet, but continuing...");
-      if (cb) cb(ESP_OK);
+      ESP_LOGE(kTag, "Did not receive advertisement packet. Timing out.");
+      if (cb) cb(ESP_ERR_TIMEOUT);
     }
   }, pdMS_TO_TICKS(10));
 }

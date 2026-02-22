@@ -2,6 +2,7 @@
 #include <cstring>
 #include <vector>
 #include "esp_log.h"
+#include "nvs_flash.h"
 
 namespace {
 constexpr char kTag[] = "ALC_Storage";
@@ -44,7 +45,7 @@ bool Storage::KeyExists(const std::string& key) {
   }
 
   nvs_iterator_t it = NULL;
-  esp_err_t err = nvs_entry_find("nvs", name_space_.c_str(), NVS_TYPE_ANY, &it);
+  esp_err_t err = nvs_entry_find(NVS_DEFAULT_PART_NAME, name_space_.c_str(), NVS_TYPE_ANY, &it);
   while (err == ESP_OK && it != NULL) {
     nvs_entry_info_t info;
     nvs_entry_info(it, &info);

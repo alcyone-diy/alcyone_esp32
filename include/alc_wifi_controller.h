@@ -166,8 +166,8 @@ private:
   ScanCallback scan_callback_ = nullptr;
   bool auto_reconnect_ = true;
   std::mutex data_mutex_;
-  esp_event_handler_instance_t wifi_event_handler_instance_;
-  esp_event_handler_instance_t ip_event_handler_instance_;
+  esp_event_handler_instance_t wifi_event_handler_instance_{nullptr};
+  esp_event_handler_instance_t ip_event_handler_instance_{nullptr};
 };
 
 }  // namespace ALC
