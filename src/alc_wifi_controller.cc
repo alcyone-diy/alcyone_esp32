@@ -4,11 +4,12 @@
 
 #include "esp_wifi.h"
 #include "esp_log.h"
-
-#define TAG "ALC_WifiController"
+#include <cassert>
+#include <algorithm>
 
 namespace {
 
+constexpr char kTag[] = "ALC_WifiController";
 constexpr int kMaxRetry = 5;
 
 }  // namespace
@@ -23,11 +24,17 @@ WifiController::~WifiController() {
   esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler_instance_);
 }
 
+esp_err_t WifiController::Scan() {
+  wifi_scan_config_t scan_config = {};
+  scan_config.show_hidden = true;
+  return esp_wifi_scan_start(&scan_config, false);
+}
+
 esp_err_t WifiController::Init() {
   retry_timer_ = std::make_unique<ESP32Timer>([this]() { this->HandleRetry(); });
   last_error_ = esp_netif_init();
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_netif_init() error: %s", esp_err_to_name(last_error_));
+    ESP_LOGE(kTag, "esp_netif_init() error: %s", esp_err_to_name(last_error_));
     return last_error_;
   }
 
@@ -37,7 +44,7 @@ esp_err_t WifiController::Init() {
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   last_error_ = esp_wifi_init(&cfg);
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_wifi_init() error: %s", esp_err_to_name(last_error_));
+    ESP_LOGE(kTag, "esp_wifi_init() error: %s", esp_err_to_name(last_error_));
     return last_error_;
   }
 
@@ -45,7 +52,7 @@ esp_err_t WifiController::Init() {
                                                     &WifiController::EventHandler, this,
                                                     &wifi_event_handler_instance_);
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_event_handler_instance_register(WIFI_EVENT) error: %s",
+    ESP_LOGE(kTag, "esp_event_handler_instance_register(WIFI_EVENT) error: %s",
              esp_err_to_name(last_error_));
     return last_error_;
   }
@@ -54,20 +61,20 @@ esp_err_t WifiController::Init() {
                                                     &WifiController::EventHandler, this,
                                                     &ip_event_handler_instance_);
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_event_handler_instance_register(IP_EVENT) error: %s",
+    ESP_LOGE(kTag, "esp_event_handler_instance_register(IP_EVENT) error: %s",
              esp_err_to_name(last_error_));
     return last_error_;
   }
 
   last_error_ = esp_wifi_set_mode(WIFI_MODE_STA);
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_wifi_set_mode() error: %s", esp_err_to_name(last_error_));
+    ESP_LOGE(kTag, "esp_wifi_set_mode() error: %s", esp_err_to_name(last_error_));
     return last_error_;
   }
 
   last_error_ = esp_wifi_start();
   if (last_error_ != ESP_OK) {
-    ESP_LOGE(TAG, "esp_wifi_start() error: %s", esp_err_to_name(last_error_));
+    ESP_LOGE(kTag, "esp_wifi_start() error: %s", esp_err_to_name(last_error_));
     return last_error_;
   }
   return last_error_;
@@ -119,6 +126,11 @@ esp_err_t WifiController::Connect() {
   return last_error_;
 }
 
+esp_err_t WifiController::Disconnect() {
+  last_error_ = esp_wifi_disconnect();
+  return last_error_;
+}
+
 esp_err_t WifiController::SetDefaultWifi() {
   if (credential_list_.empty()) {
     return ESP_ERR_INVALID_ARG;
@@ -128,7 +140,7 @@ esp_err_t WifiController::SetDefaultWifi() {
   }
   Credential credential = credential_list_[credential_index_];
 
-  ESP_LOGI(TAG, "Connect: %s", credential.ssid.c_str());
+  ESP_LOGI(kTag, "Connect: %s", credential.ssid.c_str());
   wifi_config_t wifi_config = {}; // Initialize everything to zero
 
   strlcpy(reinterpret_cast<char*>(wifi_config.sta.ssid), credential.ssid.c_str(),
@@ -142,13 +154,13 @@ esp_err_t WifiController::SetDefaultWifi() {
 
   last_error_ = esp_wifi_set_mode(WIFI_MODE_STA);
   if (last_error_ != ESP_OK) {
-    ESP_LOGW(TAG, "esp_wifi_set_mode error\n");
+    ESP_LOGW(kTag, "esp_wifi_set_mode error\n");
     return last_error_;
   }
 
   last_error_ = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
   if (last_error_ != ESP_OK) {
-    ESP_LOGW(TAG, "esp_wifi_set_config error\n");
+    ESP_LOGW(kTag, "esp_wifi_set_config error\n");
   }
   return last_error_;
 }
@@ -202,30 +214,30 @@ void WifiController::OnStaGotIp(ip_event_got_ip_t* event) {
 
 void WifiController::OnStaDisconnectEvent(wifi_event_sta_disconnected_t* event_data) {
   wifi_err_reason_t reason = static_cast<wifi_err_reason_t>(event_data->reason);
-  ESP_LOGW(TAG, "Disconnected. Reason: %d", reason);
+  ESP_LOGW(kTag, "Disconnected. Reason: %d", reason);
 
   State new_state = (state_ == State::kGotIp || state_ == State::kReconnecting)
                         ? State::kReconnecting
                         : State::kIdle;
-  if (retry_num_ < kMaxRetry) {
+  if (retry_num_ >= kMaxRetry) {
     new_state = State::kIdle;
   }
   LastConnection error = LastConnection::kUnknownError;
 
   if (reason == WIFI_REASON_AUTH_FAIL) {
     error = LastConnection::kErrorAuth;
-    ESP_LOGE(TAG, "Invalid password. Giving up.");
+    ESP_LOGE(kTag, "Invalid password. Giving up.");
   } else if (reason == WIFI_REASON_NO_AP_FOUND) {
     error = LastConnection::kWifiNotFound;
   }
 
   if (new_state == State::kReconnecting) {
     retry_num_++;
-    ESP_LOGW(TAG, "Reconnect attempt %d", retry_num_);
+    ESP_LOGW(kTag, "Reconnect attempt %d", retry_num_);
     uint32_t retry_delay_us = (retry_num_ <= 2) ? 2000000 : 5000000;
 
     if (reason > 100) {
-      ESP_LOGD(TAG, "Internal error detected, light radio reset.");
+      ESP_LOGD(kTag, "Internal error detected, light radio reset.");
     }
 
     assert(retry_timer_.get());
@@ -257,14 +269,14 @@ void WifiController::OnScanDoneEvent(wifi_event_sta_scan_done_t* event_data) {
 }
 
 void WifiController::HandleRetry() {
-  ESP_LOGI(TAG, "Timer expired, attempting reconnection...");
+  ESP_LOGI(kTag, "Timer expired, attempting reconnection...");
   esp_wifi_connect();
 }
 
 // static
 void WifiController::EventHandler(void* arg, esp_event_base_t event_base, int32_t event_id,
                                   void* event_data) {
-  ESP_LOGW(TAG, "EventHandler %s", event_base);
+  ESP_LOGW(kTag, "EventHandler %s", event_base);
   WifiController* wifi_controller = static_cast<WifiController*>(arg);
   if (!wifi_controller) {
     return;
@@ -273,30 +285,30 @@ void WifiController::EventHandler(void* arg, esp_event_base_t event_base, int32_
     wifi_event_t wifi_event = static_cast<wifi_event_t>(event_id);
     switch (wifi_event) {
       case WIFI_EVENT_WIFI_READY:
-        ESP_LOGV(TAG, "WIFI_EVENT_WIFI_READY");
+        ESP_LOGV(kTag, "WIFI_EVENT_WIFI_READY");
         break;
       case WIFI_EVENT_STA_START:
-        ESP_LOGV(TAG, "WIFI_EVENT_STA_START");
+        ESP_LOGV(kTag, "WIFI_EVENT_STA_START");
         wifi_controller->OnStaStartEvent();
         break;
       case WIFI_EVENT_STA_STOP:
-        ESP_LOGV(TAG, "WIFI_EVENT_STA_STOP");
+        ESP_LOGV(kTag, "WIFI_EVENT_STA_STOP");
         break;
       case WIFI_EVENT_STA_CONNECTED:
-        ESP_LOGV(TAG, "WIFI_EVENT_STA_CONNECTED");
+        ESP_LOGV(kTag, "WIFI_EVENT_STA_CONNECTED");
         wifi_controller->OnStaConnectedEvent(static_cast<wifi_event_sta_connected_t*>(event_data));
         break;
       case WIFI_EVENT_STA_DISCONNECTED:
-        ESP_LOGV(TAG, "WIFI_EVENT_STA_DISCONNECTED");
+        ESP_LOGV(kTag, "WIFI_EVENT_STA_DISCONNECTED");
         wifi_controller->OnStaDisconnectEvent(
             static_cast<wifi_event_sta_disconnected_t*>(event_data));
         break;
       case WIFI_EVENT_SCAN_DONE:
-        ESP_LOGV(TAG, "WIFI_EVENT_SCAN_DONE");
+        ESP_LOGV(kTag, "WIFI_EVENT_SCAN_DONE");
         wifi_controller->OnScanDoneEvent(static_cast<wifi_event_sta_scan_done_t*>(event_data));
         break;
       case WIFI_EVENT_HOME_CHANNEL_CHANGE:
-        ESP_LOGV(TAG, "WIFI_EVENT_HOME_CHANNEL_CHANGE");
+        ESP_LOGV(kTag, "WIFI_EVENT_HOME_CHANNEL_CHANGE");
         break;
       default:
         break;

@@ -4,9 +4,9 @@
 
 #include <map>
 
-#define TAG "ALC_ESP32Timer"
-
 namespace {
+
+constexpr char kTag[] = "ALC_ESP32Timer";
 
 std::mutex state_map_mutex;
 std::map<ALC::ESP32Timer*, std::weak_ptr<ALC::ESP32Timer::State>> timer_states;
@@ -72,7 +72,7 @@ void ESP32Timer::Stop() {
   }
   esp_err_t err = esp_timer_stop(state_->handle);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGW(TAG, "Unexpected error during Stop: %s", esp_err_to_name(err));
+    ESP_LOGW(kTag, "Unexpected error during Stop: %s", esp_err_to_name(err));
   }
   state_->is_running = false;
 }

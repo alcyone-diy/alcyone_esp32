@@ -7,9 +7,9 @@
 namespace ALC {
 
 /**
- * @brief BME280Driver driver class for ESP-IDF.
+ * @brief BME280Sensor driver class for ESP-IDF.
  */
-class BME280Driver {
+class BME280Sensor {
 public:
   using Callback = I2CBusManager::Callback;
   using BusToken = I2CBusManager::BusToken;
@@ -106,23 +106,23 @@ public:
   /**
    * @brief Default constructor is deleted.
    */
-  BME280Driver() = delete;
+  BME280Sensor() = delete;
 
   /**
-   * @brief Construct a new BME280Driver object.
+   * @brief Construct a new BME280Sensor object.
    *
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address of the driver (default: 0x76).
    */
-  explicit BME280Driver(I2CBusManager& bus_manager, uint16_t address = 0x76);
+  explicit BME280Sensor(I2CBusManager& bus_manager, uint16_t address = 0x76);
 
   /**
    * @brief Copying or moving a driver instance is not allowed.
    */
-  BME280Driver(const BME280Driver&) = delete;
-  BME280Driver& operator=(const BME280Driver&) = delete;
-  BME280Driver(BME280Driver&&) = delete;
-  BME280Driver& operator=(BME280Driver&&) = delete;
+  BME280Sensor(const BME280Sensor&) = delete;
+  BME280Sensor& operator=(const BME280Sensor&) = delete;
+  BME280Sensor(BME280Sensor&&) = delete;
+  BME280Sensor& operator=(BME280Sensor&&) = delete;
 
   /**
    * @brief Initialize the driver.

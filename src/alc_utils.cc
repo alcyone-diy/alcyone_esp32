@@ -6,12 +6,13 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include <cstring>
-
-#define TAG "ALC_Utils"
+#include <inttypes.h>
 
 namespace ALC {
 
 namespace {
+
+constexpr char kTag[] = "ALC_Utils";
 
 constexpr char kWifiCredsKey[] = "wifi_creds";
 constexpr char kSsidKey[] = "ssid";
@@ -74,17 +75,17 @@ void PrintMemory() {
   }
 
   printf("Minimum:\n");
-  printf("\tFree heap:         %lu bytes\n", minimum.free_heap);
-  printf("\tMinimum free heap: %lu bytes\n", minimum.minimum_free_heap);
-  printf("\tFree PSRAM:        %lu bytes\n", minimum.free_psram);
+  printf("\tFree heap:         %" PRIu32 " bytes\n", minimum.free_heap);
+  printf("\tMinimum free heap: %" PRIu32 " bytes\n", minimum.minimum_free_heap);
+  printf("\tFree PSRAM:        %" PRIu32 " bytes\n", minimum.free_psram);
   printf("Current:\n");
-  printf("\tFree heap:         %lu bytes\n", current.free_heap);
-  printf("\tMinimum free heap: %lu bytes\n", current.minimum_free_heap);
-  printf("\tFree PSRAM:        %lu bytes\n", current.free_psram);
+  printf("\tFree heap:         %" PRIu32 " bytes\n", current.free_heap);
+  printf("\tMinimum free heap: %" PRIu32 " bytes\n", current.minimum_free_heap);
+  printf("\tFree PSRAM:        %" PRIu32 " bytes\n", current.free_psram);
   printf("Maximum:\n");
-  printf("\tFree heap:         %lu bytes\n", maximum.free_heap);
-  printf("\tMinimum free heap: %lu bytes\n", maximum.minimum_free_heap);
-  printf("\tFree PSRAM:        %lu bytes\n", maximum.free_psram);
+  printf("\tFree heap:         %" PRIu32 " bytes\n", maximum.free_heap);
+  printf("\tMinimum free heap: %" PRIu32 " bytes\n", maximum.minimum_free_heap);
+  printf("\tFree PSRAM:        %" PRIu32 " bytes\n", maximum.free_psram);
 }
 
 esp_err_t AddWifiCredential(Storage& storage, const WifiController::Credential& credential) {

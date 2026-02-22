@@ -8,19 +8,19 @@
 namespace ALC {
 
 /**
- * @brief BNO086Driver IMU driver for ESP-IDF.
+ * @brief BNO086Sensor IMU driver for ESP-IDF.
  *
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 driver.
  * It utilizes the ALC::I2CBusManager for non-blocking, serialized I2C access.
  *
  * ### Usage
- * 1. Instantiate the @ref BNO086Driver class with a reference to the I2CBusManager.
+ * 1. Instantiate the @ref BNO086Sensor class with a reference to the I2CBusManager.
  * 2. Call @ref Init() to initialize the driver and perform a soft reset.
  * 3. Call one or more `Enable...()` methods to start receiving data from specific drivers.
  * 4. Call @ref Update() periodically to poll for new packets.
  * 5. Retrieve the latest data using the corresponding `Get...()` methods.
  */
-class BNO086Driver {
+class BNO086Sensor {
 public:
   using Callback = I2CBusManager::Callback;
   using BusToken = I2CBusManager::BusToken;
@@ -66,25 +66,25 @@ public:
   };
 
   /**
-   * @brief Construct a new BNO086Driver object.
+   * @brief Construct a new BNO086Sensor object.
    *
    * @param bus_manager Reference to the I2C bus manager.
    * @param address I2C address (default is 0x4A, can be 0x4B).
    */
-  explicit BNO086Driver(I2CBusManager& bus_manager, uint16_t address = 0x4A);
+  explicit BNO086Sensor(I2CBusManager& bus_manager, uint16_t address = 0x4A);
 
   /**
    * @brief Default constructor is deleted.
    */
-  BNO086Driver() = delete;
+  BNO086Sensor() = delete;
 
   /**
    * @brief Copying or moving a driver instance is not allowed.
    */
-  BNO086Driver(const BNO086Driver&) = delete;
-  BNO086Driver& operator=(const BNO086Driver&) = delete;
-  BNO086Driver(BNO086Driver&&) = delete;
-  BNO086Driver& operator=(BNO086Driver&&) = delete;
+  BNO086Sensor(const BNO086Sensor&) = delete;
+  BNO086Sensor& operator=(const BNO086Sensor&) = delete;
+  BNO086Sensor(BNO086Sensor&&) = delete;
+  BNO086Sensor& operator=(BNO086Sensor&&) = delete;
 
   /**
    * @brief Initialize the driver. Performs a soft reset and waits for advertisement.

@@ -197,6 +197,7 @@ private:
 
   i2c_port_t port_;
   i2c_master_bus_handle_t bus_handle_{nullptr};
+  bool running_{false};
   std::map<uint16_t, i2c_master_dev_handle_t> dev_handles_;
   uint32_t default_clk_speed_{100000};
 
