@@ -18,8 +18,12 @@ I2CBusManager::~I2CBusManager() {
     xSemaphoreGive(wake_sem_);
   }
 
-  if (task_handle_ && done_sem_) {
-    xSemaphoreTake(done_sem_, pdMS_TO_TICKS(100));
+  if (task_handle_) {
+    if (done_sem_) {
+      xSemaphoreTake(done_sem_, pdMS_TO_TICKS(100));
+    }
+    vTaskDelete(task_handle_);
+    task_handle_ = nullptr;
   }
 
   if (done_sem_) {
@@ -31,8 +35,6 @@ I2CBusManager::~I2CBusManager() {
     vSemaphoreDelete(wake_sem_);
     wake_sem_ = nullptr;
   }
-
-  task_handle_ = nullptr;
 
   std::lock_guard<std::mutex> lock(mutex_);
   immediate_requests_.clear();
@@ -234,7 +236,8 @@ void I2CBusManager::TaskLoop() {
   if (done_sem_) {
     xSemaphoreGive(done_sem_);
   }
-  vTaskDelete(NULL);
+  // Wait to be deleted by destructor
+  vTaskSuspend(NULL);
 }
 
 } // namespace ALC
