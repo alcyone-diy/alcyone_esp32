@@ -10,8 +10,10 @@ idf_component_register(
     "src/i2c/alc_max_m10s_driver.cc"
   PRIV_INCLUDE_DIRS
     "src"
+    "src/i2c"
   INCLUDE_DIRS
     "include"
+    "include/i2c"
   REQUIRES
     "esp_timer"
     "esp_common"
