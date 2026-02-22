@@ -1,4 +1,4 @@
-#include "alc_bno086_driver.h"
+#include "i2c/alc_bno086_driver.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

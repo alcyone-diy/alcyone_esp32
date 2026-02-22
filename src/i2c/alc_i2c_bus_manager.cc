@@ -1,4 +1,4 @@
-#include "alc_i2c_bus_manager.h"
+#include "i2c/alc_i2c_bus_manager.h"
 #include "esp_log.h"
 
 static const char* TAG = "ALC_I2CBusManager";
