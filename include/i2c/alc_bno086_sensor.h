@@ -8,7 +8,7 @@
 namespace ALC {
 
 /**
- * @brief BNO086Sensor IMU sensor for ESP-IDF.
+ * @brief Driver for the BNO086 9-axis IMU sensor.
  *
  * This class implements the SH-2 protocol over I2C to communicate with the BNO086 sensor.
  * It utilizes the ALC::I2CBusManager for non-blocking, serialized I2C access.
@@ -240,7 +240,7 @@ private:
   Stability stability_ = Stability::UNKNOWN;
 
   // SHTP buffer and recursive mutex for thread safety
-  uint8_t buffer_[256];
+  uint8_t buffer_[256]{0};
   mutable std::recursive_mutex mutex_;
 
   // SH-2 Protocol helpers

@@ -9,7 +9,10 @@
 namespace ALC {
 
 /**
- * @brief Sensor for u-blox MAX-M10S GNSS module using UBX protocol over I2C.
+ * @brief Driver for the u-blox MAX-M10S GNSS module.
+ *
+ * This class implements the UBX protocol over I2C to communicate with the MAX-M10S
+ * module. It utilizes ALC::I2CBusManager for serialized, non-blocking bus access.
  */
 class MaxM10sSensor {
 public:
@@ -262,7 +265,7 @@ private:
   uint8_t rx_id_ = 0;
   uint16_t rx_len_ = 0;
   uint16_t rx_idx_ = 0;
-  uint8_t rx_buffer_[1024];
+  uint8_t rx_buffer_[1024]{0};
   uint8_t rx_ck_a_ = 0;
   uint8_t rx_ck_b_ = 0;
 

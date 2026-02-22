@@ -1,6 +1,5 @@
 #include "alc_utils.h"
 
-#include "esp_err.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "cJSON.h"

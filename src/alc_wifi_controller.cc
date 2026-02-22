@@ -2,7 +2,6 @@
 
 #include "alc_esp32_timer.h"
 
-#include "esp_wifi.h"
 #include "esp_log.h"
 #include <cassert>
 #include <algorithm>

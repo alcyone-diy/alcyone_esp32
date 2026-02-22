@@ -52,6 +52,11 @@ I2CBusManager::~I2CBusManager() {
 }
 
 esp_err_t I2CBusManager::Init(int sda_pin, int scl_pin, uint32_t clk_speed) {
+  if (bus_handle_ != nullptr) {
+    ESP_LOGW(kTag, "I2CBusManager already initialized on port %d", port_);
+    return ESP_OK;
+  }
+
   default_clk_speed_ = clk_speed;
 
   i2c_master_bus_config_t bus_conf = {};

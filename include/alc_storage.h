@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include "esp_err.h"
 #include "nvs.h"
 #include "cJSON.h"
